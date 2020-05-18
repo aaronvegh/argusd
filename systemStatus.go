@@ -3,8 +3,25 @@ package main
 import (
 	"github.com/shirou/gopsutil/host"
 	"log"
+	"net/http"
 	"time"
 )
+
+func (app *webSocketApp) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
+	log.Println("This is /systemStatus starting")
+
+	connection, err := app.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	session := &webSocketSession{
+		connection: connection,
+	}
+
+	session.runSystemStatus()
+}
 
 func (ses *webSocketSession) runSystemStatus() {
 

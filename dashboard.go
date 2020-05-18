@@ -2,8 +2,25 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"time"
 )
+
+func (app *webSocketApp) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	log.Println("This is /connect starting")
+
+	connection, err := app.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	session := &webSocketSession{
+		connection: connection,
+	}
+
+	session.runDashboard()
+}
 
 func (ses *webSocketSession) runDashboard() {
 

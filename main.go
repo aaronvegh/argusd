@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
@@ -38,53 +40,26 @@ func newWebSocketApp() (*webSocketApp, error) {
 		},
 	}
 
+	router := mux.NewRouter()
+	router.Use(AuthenticationMiddleware)
+
 	app := &webSocketApp{
 		upgrader: upgrader,
-		router:   mux.NewRouter(),
+		router:   router,
 	}
 
 	app.router.HandleFunc("/systemStatus", app.handleSystemStatus).Methods("GET")
 	app.router.HandleFunc("/dashboard", app.handleDashboard).Methods("GET")
+	app.router.HandleFunc("/liveResponse", app.handleLiveResponse).Methods("GET")
+	app.router.HandleFunc("/fileOperations", app.handleFileOperations).Methods("GET")
 
 	return app, nil
-}
-
-func (app *webSocketApp) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
-	log.Println("This is /systemStatus starting")
-
-	connection, err := app.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	session := &webSocketSession{
-		connection: connection,
-	}
-
-	session.runSystemStatus()
-}
-
-func (app *webSocketApp) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	log.Println("This is /connect starting")
-
-	connection, err := app.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	session := &webSocketSession{
-		connection: connection,
-	}
-
-	session.runDashboard()
 }
 
 func (app *webSocketApp) run() error {
 	srv := &http.Server{
 		Handler:      app.router,
-		Addr:         ":26510",
+		Addr:         "127.0.0.1:26510",
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
@@ -104,16 +79,82 @@ func SetupCloseHandler() {
 	}()
 }
 
+func autoUpdate() {
+	err := AutoUpdate(Updater{
+		CurrentVersion: Version,
+		S3Bucket:       "argusd",
+		S3Region:       "us-east-1",
+		S3ReleaseKey:   "argusd/argusd-{{OS}}-{{ARCH}}",
+		S3VersionKey:   "argusd/VERSION",
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func handleGetVersion(w http.ResponseWriter, r *http.Request) {
+	versionString := dict{
+		"version": Version,
+	}
+
+	js, err := json.Marshal(versionString)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(js)
+}
+
+func AuthenticationMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("X-Argus-Token")
+
+		file, err := ioutil.ReadFile("/etc/argusd.conf")
+		if err != nil {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		}
+		serverToken := string(file)
+		if token == serverToken {
+			next.ServeHTTP(w, r)
+		} else {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		}
+	})
+}
+
+var (
+	Version = ""
+)
+
 func main() {
+
+	go func() {
+		for {
+			autoUpdate()
+			time.Sleep(10 * time.Minute)
+		}
+	}()
 
 	// Setup our Ctrl+C handler
 	SetupCloseHandler()
 
 	restApp := mux.NewRouter()
+	restApp.Use(AuthenticationMiddleware)
+	restApp.HandleFunc("/getVersion", handleGetVersion).Methods("GET")
 	restApp.HandleFunc("/getFile", handleGetFile).Methods("POST")
 	restApp.HandleFunc("/getUsersGroups/{username}", handleGetUsersGroups).Methods("GET")
 	restApp.HandleFunc("/updateGroups", handleUpdateGroups).Methods("POST")
-	go http.ListenAndServe(":26511", restApp)
+	restApp.HandleFunc("/newUser", handleNewUser).Methods("POST")
+	restApp.HandleFunc("/removeUser", handleRemoveUser).Methods("POST")
+	restApp.HandleFunc("/packages/all/{distro}", handleInstalledPackages).Methods("GET")
+	restApp.HandleFunc("/packages/getInfo", handlePackageInfo).Methods("POST")
+	restApp.HandleFunc("/packages/search", handleFindPackages).Methods("POST")
+	go func() {
+		if err := http.ListenAndServe("127.0.0.1:26511", restApp); err != nil {
+			log.Fatal("Could not listen and serve: ", err)
+		}
+	}()
 
 	app, err := newWebSocketApp()
 	if err != nil {
