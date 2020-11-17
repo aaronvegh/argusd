@@ -29,7 +29,7 @@ func handleInstalledPackages(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(distro, "fedora") || strings.Contains(distro, "centos") {
 		listCommand = "yum list installed | awk '{print $1,$2}'"
 	} else {
-		listCommand = "dpkg -l | awk '{print $2,$3}'"
+		listCommand = "dpkg -l | awk 'NR>5{print $2,$3}'"
 	}
 
 	cmd := exec.Command("bash", "-c", listCommand)
@@ -37,7 +37,7 @@ func handleInstalledPackages(w http.ResponseWriter, r *http.Request) {
 	cmd.Stdout = &out
 	cmdErr := cmd.Run()
 	if cmdErr != nil {
-		log.Fatal(cmdErr)
+		log.Println(cmdErr)
 	}
 
 	lines := strings.FieldsFunc(out.String(), func(r rune) bool {
@@ -84,7 +84,7 @@ func handlePackageInfo(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	distro := p["distro"]
@@ -113,7 +113,7 @@ func handleFindPackages(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	distro := p["distro"]
@@ -172,6 +172,69 @@ func handleFindPackages(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 
 }
+
+func handleUpgradable(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	distro := vars["distro"]
+
+	listCommand := ""
+	if strings.Contains(distro, "fedora") || strings.Contains(distro, "centos") {
+		listCommand = "yum -q check-update | awk '{print $1,$2}'"
+	} else {
+		listCommand = "apt-get --simulate upgrade | awk '/^Inst ([a-zA-Z0-9\\-\\.]+) \\[([a-zA-Z0-9\\-\\.\\:]+)\\]/{print $2,$3}'"
+		exec.Command("bash", "-c", "apt update")
+	}
+
+	cmd := exec.Command("bash", "-c", listCommand)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmdErr := cmd.Run()
+	if cmdErr != nil {
+		log.Println(cmdErr)
+	}
+
+	lines := strings.FieldsFunc(out.String(), func(r rune) bool {
+		if r == '\n' {
+			return true
+		}
+		return false
+	})
+
+	var upgradablePackages []InstalledPackage
+	for i, line := range lines {
+		if i == 0 {
+			continue
+		}
+		item := strings.FieldsFunc(line, func(r rune) bool {
+			if r == ' ' {
+				return true
+			}
+			return false
+		})
+		packageName := item[0]
+		packageVersion := ""
+		if len(item) > 1 {
+			packageVersion = item[1]
+			packageVersion = strings.Replace(packageVersion, "[", "", -1)
+			packageVersion = strings.Replace(packageVersion, "]", "", -1)
+		}
+		upgradablePackages = append(upgradablePackages, InstalledPackage{
+			PackageName:    packageName,
+			PackageVersion: packageVersion,
+		})
+	}
+
+	js, err := json.Marshal(upgradablePackages)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(js)
+
+}
+
 
 func (ses *webSocketSession) runPackageInstall(distro string, packages string) {
 

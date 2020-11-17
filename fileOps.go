@@ -7,6 +7,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"io/ioutil"
 	"log"
+	"os"
+	"io"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -37,6 +39,57 @@ func handleGetFile(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(stringFile))
 }
 
+func handleDownloadFile(w http.ResponseWriter, r *http.Request) {
+	log.Println("Handling downloadFile")
+	var p map[string]string
+	err := json.NewDecoder(r.Body).Decode(&p)
+	if err != nil {
+		log.Println(err)
+	}
+	path := p["path"]
+	
+	log.Println("Got path: " + path)
+	http.ServeFile(w, r, path)
+}
+
+func handleUploadFile(w http.ResponseWriter, r *http.Request) {
+	log.Println("Handling uploadFile")
+	
+	// Parse our multipart form, 10 << 20 specifies a maximum
+	// upload of 10 MB files.
+	r.ParseMultipartForm(10 << 20)
+	
+	// FormFile returns the first file for the given key `myFile`
+	// it also returns the FileHeader so we can get the Filename,
+	// the Header and the size of the file
+	file, handler, err := r.FormFile("path")
+	if err != nil {
+		log.Println("Error Retrieving the File")
+		log.Println(err)
+		return
+	}
+	defer file.Close()
+	log.Printf("Uploaded File: %+v\n", handler.Filename)
+	log.Printf("File Size: %+v\n", handler.Size)
+	log.Printf("MIME Header: %+v\n", handler.Header)
+
+	// Create file
+	dst, err := os.Create(handler.Filename)
+	defer dst.Close()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Copy the uploaded file to the created file on the filesystem
+	if _, err := io.Copy(dst, file); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	w.WriteHeader(200)
+}
+
 func handleGetUsersGroups(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	cmd := exec.Command("/usr/bin/id", "-Gn", vars["username"])
@@ -44,7 +97,7 @@ func handleGetUsersGroups(w http.ResponseWriter, r *http.Request) {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	w.Write([]byte(out.String()))
 }
@@ -55,7 +108,7 @@ func handleUpdateGroups(w http.ResponseWriter, r *http.Request) {
 
 	groupsFile, err := ioutil.ReadFile("/etc/group")
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		w.WriteHeader(500)
 	}
 
@@ -66,7 +119,7 @@ func handleUpdateGroups(w http.ResponseWriter, r *http.Request) {
 
 	writeErr := ioutil.WriteFile("/etc/group", []byte(groupsFinal), 544)
 	if writeErr != nil {
-		log.Fatal(writeErr)
+		log.Println(writeErr)
 		w.WriteHeader(500)
 	}
 	w.WriteHeader(200)
@@ -76,7 +129,7 @@ func handleNewUser(w http.ResponseWriter, r *http.Request) {
 	var n NewUser
 	err := json.NewDecoder(r.Body).Decode(&n)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	commands := []string{"-c", n.Fullname}
@@ -95,7 +148,7 @@ func handleNewUser(w http.ResponseWriter, r *http.Request) {
 
 	err2 := cmd.Run()
 	if err2 != nil {
-		log.Fatal(err2)
+		log.Println(err2)
 	}
 	w.Write([]byte(out.String()))
 }
@@ -104,7 +157,7 @@ func handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	user := p["username"]
 
@@ -127,7 +180,7 @@ func handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 
 	err2 := delCommand.Run()
 	if err2 != nil {
-		log.Fatal(err2)
+		log.Println(err2)
 	}
 	w.Write([]byte(out.String()))
 

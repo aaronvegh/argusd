@@ -12,6 +12,7 @@ import (
 
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -108,18 +109,23 @@ func handleGetVersion(w http.ResponseWriter, r *http.Request) {
 
 func AuthenticationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("X-Argus-Token")
-
-		file, err := ioutil.ReadFile("/etc/argusd.conf")
-		if err != nil {
-			http.Error(w, "Forbidden", http.StatusForbidden)
+		if token := r.Header.Get("X-Argus-Token"); token != "" {
+			file, err := ioutil.ReadFile("/etc/argusd.conf")
+			if err != nil {
+				log.Println("Error: Can't read config file")
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+			serverTokens := string(file)
+			tokenLines := strings.Split(serverTokens, "\n")
+			index, _ := FindInArray(tokenLines, token)
+			if index >= 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
-		serverToken := string(file)
-		if token == serverToken {
-			next.ServeHTTP(w, r)
-		} else {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-		}
+		log.Println("Error: Token doesn't match.")
+		http.Error(w, "Forbidden", http.StatusForbidden)
 	})
 }
 
@@ -128,7 +134,10 @@ var (
 )
 
 func main() {
-
+	// go func() {
+	// 		log.Println(http.ListenAndServe(":6060", nil))
+	// 	}()
+	
 	go func() {
 		for {
 			autoUpdate()
@@ -143,6 +152,8 @@ func main() {
 	restApp.Use(AuthenticationMiddleware)
 	restApp.HandleFunc("/getVersion", handleGetVersion).Methods("GET")
 	restApp.HandleFunc("/getFile", handleGetFile).Methods("POST")
+	restApp.HandleFunc("/downloadFile", handleDownloadFile).Methods("POST")
+	restApp.HandleFunc("/uploadFile", handleUploadFile).Methods("POST")
 	restApp.HandleFunc("/getUsersGroups/{username}", handleGetUsersGroups).Methods("GET")
 	restApp.HandleFunc("/updateGroups", handleUpdateGroups).Methods("POST")
 	restApp.HandleFunc("/newUser", handleNewUser).Methods("POST")
@@ -150,19 +161,21 @@ func main() {
 	restApp.HandleFunc("/packages/all/{distro}", handleInstalledPackages).Methods("GET")
 	restApp.HandleFunc("/packages/getInfo", handlePackageInfo).Methods("POST")
 	restApp.HandleFunc("/packages/search", handleFindPackages).Methods("POST")
+	restApp.HandleFunc("/packages/upgradable/{distro}", handleUpgradable).Methods("GET")
+	
 	go func() {
 		if err := http.ListenAndServe("127.0.0.1:26511", restApp); err != nil {
-			log.Fatal("Could not listen and serve: ", err)
+			log.Println("Could not listen and serve: ", err)
 		}
 	}()
 
 	app, err := newWebSocketApp()
 	if err != nil {
-		log.Fatal("Could not create app:", err)
+		log.Println("Could not create app:", err)
 	}
 
 	if err := app.run(); err != nil {
-		log.Fatal("Could not run app:", err)
+		log.Println("Could not run app:", err)
 	}
 
 }

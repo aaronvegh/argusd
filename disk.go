@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-
+	"strings"
 	"github.com/shirou/gopsutil/disk"
 )
 
@@ -23,19 +23,21 @@ func diskStats() []UsageStat {
 
 	var diskUsage []UsageStat
 	for _, part := range partitions {
-		disk, err := disk.Usage(part.Mountpoint)
-		if err != nil {
-			log.Println(err)
-			continue
+		if !strings.Contains(part.Device, "/loop") {
+			disk, err := disk.Usage(part.Mountpoint)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+	
+			diskUsage = append(diskUsage, UsageStat{
+				Path:   disk.Path,
+				Fstype: disk.Fstype,
+				Total:  disk.Total,
+				Free:   disk.Free,
+				Used:   disk.Used,
+			})
 		}
-
-		diskUsage = append(diskUsage, UsageStat{
-			Path:   disk.Path,
-			Fstype: disk.Fstype,
-			Total:  disk.Total,
-			Free:   disk.Free,
-			Used:   disk.Used,
-		})
 	}
 	return diskUsage
 }

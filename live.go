@@ -20,6 +20,12 @@ type InstallRequest struct {
 	Packages string
 }
 
+type LogFileRequest struct {
+	Command string 	// tail or cat or zcat...
+	Path string		// the logfile path
+	Options string	// things like "-f" or "-n 50"
+}
+
 func (app *webSocketApp) handleLiveResponse(w http.ResponseWriter, r *http.Request) {
 	log.Println("This is /liveResponse starting")
 
@@ -40,14 +46,14 @@ func (app *webSocketApp) handleLiveResponse(w http.ResponseWriter, r *http.Reque
 		}
 
 		if err := conn.ReadJSON(&liveRequest); err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 
 		switch liveRequest.RequestName {
 		case "install":
 			var installRequest InstallRequest
 			if err := json.Unmarshal(body, &installRequest); err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			var distro string = installRequest.Distro
 			var packages string = installRequest.Packages
@@ -62,7 +68,7 @@ func (app *webSocketApp) handleLiveResponse(w http.ResponseWriter, r *http.Reque
 		case "remove":
 			var installRequest InstallRequest
 			if err := json.Unmarshal(body, &installRequest); err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			var distro string = installRequest.Distro
 			var packages string = installRequest.Packages
@@ -74,6 +80,19 @@ func (app *webSocketApp) handleLiveResponse(w http.ResponseWriter, r *http.Reque
 				installCommand = "apt-get -y remove " + packages
 			}
 			session.runLiveCommand(installCommand)
+		case "logfile":
+			var logFileRequest LogFileRequest
+			if err := json.Unmarshal(body, &logFileRequest); err != nil {
+				log.Println(err)
+			}
+			
+			var command string = logFileRequest.Command
+			var path string = logFileRequest.Path
+			var options string = logFileRequest.Options
+			
+			logfileCommand := command + " " + options + " " + path
+			log.Println(logfileCommand)
+			session.runLiveCommand(logfileCommand)
 		}
 	}
 
@@ -103,6 +122,7 @@ func (ses *webSocketSession) runLiveCommand(command string) {
 
 	s := bufio.NewScanner(io.MultiReader(stdout, stderr))
 	for s.Scan() {
+		log.Println(string(s.Bytes()))
 		ses.connection.WriteMessage(1, s.Bytes())
 	}
 

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"time"
+	"github.com/machinebox/progress"
 )
 
 type FileRequest struct {
@@ -14,9 +17,45 @@ type FileRequest struct {
 	RequestBody interface{}
 }
 
+type FileResponse struct {
+	ResponseType string
+	ResponseBody interface{}
+}
+
 // RequestType "directoryList"
 type DirectoryRequest struct {
 	DirectoryPath string
+}
+
+// RequestType "fileContents"
+type FileContentRequest struct {
+	FilePath string
+}
+
+// RequestType "moveFile"
+type MoveFileRequest struct {
+	OriginPath string
+	DestinationPath string
+}
+
+// RequestType "copyFile"
+type CopyFileRequest struct {
+	OriginPath string
+	DestinationPath string
+}
+
+// RequestType "deleteFile"
+type DeleteFileRequest struct {
+	FilePath string
+}
+
+type FileOperationProgress struct {
+	PercentRemaining time.Duration
+}
+
+type FileContentsBody struct {
+	RequestPath     string
+	RequestContents []byte
 }
 
 type FileInfo struct {
@@ -49,14 +88,45 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 		}
 
 		if err := conn.ReadJSON(&fileRequest); err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 
 		switch fileRequest.RequestType {
+		case "fileContents":
+			log.Println("Getting filecontents...")
+			var fileRequest FileContentRequest
+			if err := json.Unmarshal(body, &fileRequest); err != nil {
+				log.Println(err)
+			}
+			var path string = fileRequest.FilePath
+			log.Println("Get contents for " + path)
+			fileContents, err := ioutil.ReadFile(path)
+			if err != nil {
+				log.Println(err)
+			}
+
+			fileContentsResp := FileContentsBody{
+				RequestPath:     path,
+				RequestContents: fileContents,
+			}
+
+			response := FileResponse{
+				ResponseType: "fileContents",
+				ResponseBody: fileContentsResp,
+			}
+
+			js, err := json.Marshal(response)
+			if err != nil {
+				log.Println(err)
+			}
+
+			session.connection.WriteMessage(1, js)
+
 		case "directoryList":
+			log.Println("Getting directoryList...")
 			var directoryRequest DirectoryRequest
 			if err := json.Unmarshal(body, &directoryRequest); err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			var path string = directoryRequest.DirectoryPath
 			log.Println("Display directory for " + path)
@@ -70,15 +140,6 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 
 				var isThisDir = info.IsDir()
 
-				// if info.Mode()&os.ModeSymlink != 0 {
-				// 					originFile, err := os.Readlink(info.Name())
-				// 					if err != nil {
-				// 						log.Println(err)
-				// 					}
-				//
-				// 					isThisDir = originFile.IsDir()
-				// 				}
-
 				contentsInfo = append(contentsInfo, FileInfo{
 					Path:    path,
 					Name:    info.Name(),
@@ -90,14 +151,154 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 				})
 			}
 
-			js, err := json.Marshal(contentsInfo)
+			response := FileResponse{
+				ResponseType: "directoryList",
+				ResponseBody: contentsInfo,
+			}
+
+			js, err := json.Marshal(response)
 			if err != nil {
 				log.Println(err)
 			}
 
 			session.connection.WriteMessage(1, js)
-
-		}
+			
+		case "copyFile":
+			log.Println("Getting copyfile...")
+			var copyFileRequest CopyFileRequest
+			if err := json.Unmarshal(body, &copyFileRequest); err != nil {
+				log.Println(err)
+			}
+			var origin string = copyFileRequest.OriginPath
+			var destination string = copyFileRequest.DestinationPath
+			
+			log.Println("origin: " + origin)
+			log.Println("dest: " + destination)
+			
+			from, err := os.Open(origin)
+			if err != nil {
+				log.Println(err)
+			}
+			defer from.Close()
+			
+			ctx := context.Background()
+			r := progress.NewReader(from)
+			fileInfo, err := from.Stat()
+			if err != nil {
+				log.Println(err)
+			}
+			size := fileInfo.Size()
+			
+			go func() {
+				progressChan := progress.NewTicker(ctx, r, size, 1*time.Second)
+				for p := range progressChan {
+					fileOpProgress := FileOperationProgress {
+						PercentRemaining: p.Remaining().Round(time.Second),
+					}
+					
+					response := FileResponse {
+						ResponseType: "fileProgress",
+						ResponseBody: fileOpProgress,
+					}
+					
+					js, err := json.Marshal(response)
+					if err != nil {
+						log.Println(err)
+					}
+					session.connection.WriteMessage(1, js)
+				}
+				log.Println("\rdownload is completed")
+			}()
+			
+			to, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE, 0666)
+			if err != nil {
+				log.Println(err)
+			}
+			defer to.Close()
+			
+			_, err = io.Copy(to, from)
+			if err != nil {
+				log.Println(err)
+			}
+			  
+		case "moveFile":
+			log.Println("Getting moveFile...")
+			var moveFileRequest MoveFileRequest
+			if err := json.Unmarshal(body, &moveFileRequest); err != nil {
+				log.Println(err)
+			}
+			var origin string = moveFileRequest.OriginPath
+			var destination string = moveFileRequest.DestinationPath
+			
+			log.Println("origin: " + origin)
+			log.Println("dest: " + destination)
+			
+			from, err := os.Open(origin)
+			if err != nil {
+				log.Println(err)
+			}
+			defer from.Close()
+			
+			ctx := context.Background()
+			r := progress.NewReader(from)
+			fileInfo, err := from.Stat()
+			if err != nil {
+				log.Println(err)
+			}
+			size := fileInfo.Size()
+			
+			go func() {
+				progressChan := progress.NewTicker(ctx, r, size, 1*time.Second)
+				for p := range progressChan {
+					fileOpProgress := FileOperationProgress {
+						PercentRemaining: p.Remaining().Round(time.Second),
+					}
+					
+					response := FileResponse {
+						ResponseType: "fileProgress",
+						ResponseBody: fileOpProgress,
+					}
+					
+					js, err := json.Marshal(response)
+					if err != nil {
+						log.Println(err)
+					}
+					session.connection.WriteMessage(1, js)
+				}
+				log.Println("\rMove is completed")
+			}()
+			
+			err = os.Rename(origin, destination)
+			if err != nil {
+				log.Println(err)
+			}
+		case "deleteFile":
+			log.Println("Getting deleteFile...")
+			var deleteFileRequest DeleteFileRequest
+			if err := json.Unmarshal(body, &deleteFileRequest); err != nil {
+				log.Println(err)
+			}
+			var filePath string = deleteFileRequest.FilePath
+			
+			log.Println("filePath: " + filePath)
+		
+			err = os.Remove(filePath)
+			if err != nil {
+				log.Println(err)
+			}
+			
+			response := FileResponse {
+				ResponseType: "deleteFile",
+				ResponseBody: "ok",
+			}
+			
+			js, err := json.Marshal(response)
+			if err != nil {
+				log.Println(err)
+			}
+			
+			session.connection.WriteMessage(1, js)
+		}		
 	}
 
 	log.Println("Exiting handleWebSocket")
