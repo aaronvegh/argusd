@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"syscall"
 	"time"
 	"github.com/machinebox/progress"
 )
@@ -168,6 +169,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			var copyFileRequest CopyFileRequest
 			if err := json.Unmarshal(body, &copyFileRequest); err != nil {
 				log.Println(err)
+				continue
 			}
 			var origin string = copyFileRequest.OriginPath
 			var destination string = copyFileRequest.DestinationPath
@@ -175,57 +177,14 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			log.Println("origin: " + origin)
 			log.Println("dest: " + destination)
 			
-			from, err := os.Open(origin)
-			if err != nil {
-				log.Println(err)
-			}
-			defer from.Close()
-			
-			ctx := context.Background()
-			r := progress.NewReader(from)
-			fileInfo, err := from.Stat()
-			if err != nil {
-				log.Println(err)
-			}
-			size := fileInfo.Size()
-			
-			go func() {
-				progressChan := progress.NewTicker(ctx, r, size, 1*time.Second)
-				for p := range progressChan {
-					fileOpProgress := FileOperationProgress {
-						PercentRemaining: p.Remaining().Round(time.Second),
-					}
-					
-					response := FileResponse {
-						ResponseType: "fileProgress",
-						ResponseBody: fileOpProgress,
-					}
-					
-					js, err := json.Marshal(response)
-					if err != nil {
-						log.Println(err)
-					}
-					session.connection.WriteMessage(1, js)
-				}
-				log.Println("\rdownload is completed")
-			}()
-			
-			to, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE, 0666)
-			if err != nil {
-				log.Println(err)
-			}
-			defer to.Close()
-			
-			_, err = io.Copy(to, from)
-			if err != nil {
-				log.Println(err)
-			}
+			copyFile(session, origin, destination)
 			  
 		case "moveFile":
 			log.Println("Getting moveFile...")
 			var moveFileRequest MoveFileRequest
 			if err := json.Unmarshal(body, &moveFileRequest); err != nil {
 				log.Println(err)
+				return
 			}
 			var origin string = moveFileRequest.OriginPath
 			var destination string = moveFileRequest.DestinationPath
@@ -236,6 +195,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			from, err := os.Open(origin)
 			if err != nil {
 				log.Println(err)
+				return
 			}
 			defer from.Close()
 			
@@ -244,6 +204,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			fileInfo, err := from.Stat()
 			if err != nil {
 				log.Println(err)
+				return
 			}
 			size := fileInfo.Size()
 			
@@ -262,7 +223,9 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 					js, err := json.Marshal(response)
 					if err != nil {
 						log.Println(err)
+						return
 					}
+					log.Println(string(js))
 					session.connection.WriteMessage(1, js)
 				}
 				log.Println("\rMove is completed")
@@ -270,7 +233,16 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			
 			err = os.Rename(origin, destination)
 			if err != nil {
-				log.Println(err)
+				if err, ok := err.(*os.LinkError); ok {
+					oserr := err.Err.(syscall.Errno)
+					if oserr == syscall.EXDEV {
+						log.Println("Failed because you are copying a file cross filesystems; copy instead\n")
+						copyFile(session, origin, destination)
+					} else {
+						log.Println("Unknown OS Error is %d\n", oserr)
+					}
+					return
+				}
 			}
 		case "deleteFile":
 			log.Println("Getting deleteFile...")
@@ -302,4 +274,55 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 	}
 
 	log.Println("Exiting handleWebSocket")
+}
+
+func copyFile(session *webSocketSession, origin string, destination string) {
+	from, err := os.Open(origin)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer from.Close()
+	
+	ctx := context.Background()
+	r := progress.NewReader(from)
+	fileInfo, err := from.Stat()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	size := fileInfo.Size()
+	
+	go func() {
+		progressChan := progress.NewTicker(ctx, r, size, 1*time.Second)
+		for p := range progressChan {
+			fileOpProgress := FileOperationProgress {
+				PercentRemaining: p.Remaining().Round(time.Second),
+			}
+			
+			response := FileResponse {
+				ResponseType: "fileProgress",
+				ResponseBody: fileOpProgress,
+			}
+			
+			js, err := json.Marshal(response)
+			if err != nil {
+				log.Println(err)
+			}
+			log.Println(string(js))
+			session.connection.WriteMessage(1, js)
+		}
+		log.Println("\rdownload is completed")
+	}()
+	
+	to, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		log.Println(err)
+	}
+	defer to.Close()
+	
+	_, err = io.Copy(to, from)
+	if err != nil {
+		log.Println(err)
+	}
 }
