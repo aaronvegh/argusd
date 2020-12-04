@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/creack/golisten"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -57,10 +59,10 @@ func newWebSocketApp() (*webSocketApp, error) {
 	return app, nil
 }
 
-func (app *webSocketApp) run() error {
+func (app *webSocketApp) run(port string) error {
 	srv := &http.Server{
 		Handler:      app.router,
-		Addr:         "127.0.0.1:26510",
+		Addr:         "127.0.0.1:" + port,
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
@@ -133,10 +135,11 @@ var (
 	Version = ""
 )
 
-func main() {
-	// go func() {
-	// 		log.Println(http.ListenAndServe(":6060", nil))
-	// 	}()
+func main() {	
+	os.Setenv("TMPDIR", "/var/tmp/")
+	// nonRootUser := os.Getenv("NonRootUser") // why isn't this working?
+	nonRootUser := "aaron"
+	log.Println("NonRootUser: " + nonRootUser)
 	
 	go func() {
 		for {
@@ -152,6 +155,8 @@ func main() {
 	restApp.Use(AuthenticationMiddleware)
 	restApp.HandleFunc("/getVersion", handleGetVersion).Methods("GET")
 	restApp.HandleFunc("/getFile", handleGetFile).Methods("POST")
+	restApp.HandleFunc("/chown", handleChownFile).Methods("POST")
+	restApp.HandleFunc("/chmod", handleChmodFile).Methods("POST")
 	restApp.HandleFunc("/downloadFile", handleDownloadFile).Methods("POST")
 	restApp.HandleFunc("/uploadFile", handleUploadFile).Methods("POST")
 	restApp.HandleFunc("/getUsersGroups/{username}", handleGetUsersGroups).Methods("GET")
@@ -163,19 +168,57 @@ func main() {
 	restApp.HandleFunc("/packages/search", handleFindPackages).Methods("POST")
 	restApp.HandleFunc("/packages/upgradable/{distro}", handleUpgradable).Methods("GET")
 	
-	go func() {
-		if err := http.ListenAndServe("127.0.0.1:26511", restApp); err != nil {
-			log.Println("Could not listen and serve: ", err)
-		}
-	}()
-
 	app, err := newWebSocketApp()
 	if err != nil {
 		log.Println("Could not create app:", err)
 	}
-
-	if err := app.run(); err != nil {
-		log.Println("Could not run app:", err)
-	}
+	
+	// Create a WaitGroup to manage the four servers
+	// https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f
+	wg := new(sync.WaitGroup)
+	wg.Add(4)
+	
+	// standard root websocket application
+	go func() {
+		rootSrv := &http.Server{
+			Handler:      app.router,
+			Addr:         "127.0.0.1:26510",
+			WriteTimeout: 15 * time.Second,
+			ReadTimeout:  15 * time.Second,
+		}
+		rootSrv.ListenAndServe()
+		wg.Done()
+	}()
+	
+	// Non-privileged websocket application	
+	go func() {
+		nonRootSrv := &http.Server{
+			Handler:      app.router,
+			Addr:         "127.0.0.1:26610",
+			WriteTimeout: 15 * time.Second,
+			ReadTimeout:  15 * time.Second,
+		}
+		ln, _ := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
+		nonRootSrv.Serve(ln)
+		wg.Done()	
+	}()
+	
+	// standard root REST application
+	go func() {
+		if err := http.ListenAndServe("127.0.0.1:26511", restApp); err != nil {
+			log.Println("Could not listen and serve: ", err)
+		}
+		wg.Done()
+	}()
+	
+	// Non-privileged REST application
+	go func() {
+		if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restApp); err != nil {
+			log.Println("Could not listen and serve: ", err)
+		}
+		wg.Done()
+	}()
+	
+	wg.Wait()
 
 }

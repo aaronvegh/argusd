@@ -1,5 +1,7 @@
 github.com/aws/aws-sdk-go v1.30.19 h1:vRwsYgbUvC25Cb3oKXTyTYk3R5n1LRVk8zbvL4inWsc=
 github.com/aws/aws-sdk-go v1.30.19/go.mod h1:5zCpMtNQVjRREroY7sYe8lOMRSxkhG6MZveU8YkpAk0=
+github.com/creack/golisten v0.0.0-20150621002859-f2c7a6ba3fdc h1:yfQJHYWSq5LOPJtV5Vgz6eBxxGxR+ccgOkD4e9ZliZM=
+github.com/creack/golisten v0.0.0-20150621002859-f2c7a6ba3fdc/go.mod h1:b0qnYwsNf+gO3qmrSuEX6lnSuqSEstH3YPEwCXx+7AU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-sql-driver/mysql v1.5.0/go.mod h1:DCzpHaOWr8IXmIStZouvnhqoel9Qv2LBy8hT2VhHyBg=
 github.com/gorilla/mux v1.7.4 h1:VuZ8uybHlWmqV03+zRzdwKL4tUnIp1MAQtp1mIFE1bc=

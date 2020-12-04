@@ -6,6 +6,7 @@ defArch="amd64"
 ACCESSKEY=$1
 OS=${2:-$defOS}
 ARCH=${3:-$defArch}
+USER=$4
 
 SCRIPTNAME="argusd-$OS-$ARCH"
 
@@ -24,6 +25,7 @@ Type=simple
 Restart=always
 RestartSec=5s
 ExecStart=/usr/local/bin/argusd
+Environment=NonRootUser=$USER
 
 [Install]
 WantedBy=multi-user.target"

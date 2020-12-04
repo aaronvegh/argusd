@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"strconv"
 )
 
 type GroupUpdate struct {
@@ -37,6 +38,48 @@ func handleGetFile(w http.ResponseWriter, r *http.Request) {
 	}
 	stringFile := string(file)
 	w.Write([]byte(stringFile))
+}
+
+func handleChownFile(w http.ResponseWriter, r *http.Request) {
+	log.Println("Handling chown file...")
+	var p map[string]string
+	err := json.NewDecoder(r.Body).Decode(&p)
+	
+	log.Println("Receiving %+v\n", p)
+	
+	path := p["path"]
+	uid, err := strconv.Atoi(p["uid"]); if err != nil { w.WriteHeader(500); return }
+	gid, err := strconv.Atoi(p["gid"]); if err != nil { w.WriteHeader(500); return }
+	
+	log.Println("Getting %d, %d", uid, gid)
+	
+	err = os.Chown(path, uid, gid)
+	if err != nil {
+		w.WriteHeader(500)
+	}
+	w.WriteHeader(200)
+}
+
+func handleChmodFile(w http.ResponseWriter, r *http.Request) {
+	log.Println("Handling chmod file...")
+	var p map[string]string
+	err := json.NewDecoder(r.Body).Decode(&p)
+	if err != nil {
+		w.WriteHeader(500)
+		return
+	}
+	
+	path := p["path"]
+	
+	log.Println("Received mode: " + p["mode"])
+	modeVal, _ := strconv.ParseUint(p["mode"], 8, 32)
+	log.Println("Mode:", modeVal)
+	newMode := os.FileMode(modeVal)
+	log.Println("FileMode: ", newMode)
+	if err := os.Chmod(path, newMode); err != nil {
+		w.WriteHeader(500)
+	}
+	w.WriteHeader(200)
 }
 
 func handleDownloadFile(w http.ResponseWriter, r *http.Request) {

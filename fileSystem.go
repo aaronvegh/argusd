@@ -1,16 +1,15 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"syscall"
 	"time"
-	"github.com/machinebox/progress"
 )
 
 type FileRequest struct {
@@ -26,28 +25,43 @@ type FileResponse struct {
 // RequestType "directoryList"
 type DirectoryRequest struct {
 	DirectoryPath string
+	User string
 }
 
 // RequestType "fileContents"
 type FileContentRequest struct {
 	FilePath string
+	User string
 }
 
 // RequestType "moveFile"
 type MoveFileRequest struct {
 	OriginPath string
 	DestinationPath string
+	User string
 }
 
 // RequestType "copyFile"
 type CopyFileRequest struct {
 	OriginPath string
 	DestinationPath string
+	User string
 }
 
 // RequestType "deleteFile"
 type DeleteFileRequest struct {
 	FilePath string
+	User string
+}
+
+type NewFileRequest struct {
+	FilePath string
+	User string
+}
+
+type NewFolderRequest struct {
+	FilePath string
+	User string
 }
 
 type FileOperationProgress struct {
@@ -199,38 +213,6 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			}
 			defer from.Close()
 			
-			ctx := context.Background()
-			r := progress.NewReader(from)
-			fileInfo, err := from.Stat()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			size := fileInfo.Size()
-			
-			go func() {
-				progressChan := progress.NewTicker(ctx, r, size, 1*time.Second)
-				for p := range progressChan {
-					fileOpProgress := FileOperationProgress {
-						PercentRemaining: p.Remaining().Round(time.Second),
-					}
-					
-					response := FileResponse {
-						ResponseType: "fileProgress",
-						ResponseBody: fileOpProgress,
-					}
-					
-					js, err := json.Marshal(response)
-					if err != nil {
-						log.Println(err)
-						return
-					}
-					log.Println(string(js))
-					session.connection.WriteMessage(1, js)
-				}
-				log.Println("\rMove is completed")
-			}()
-			
 			err = os.Rename(origin, destination)
 			if err != nil {
 				if err, ok := err.(*os.LinkError); ok {
@@ -244,6 +226,17 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 					return
 				}
 			}
+			response := FileResponse {
+				ResponseType: "moveFile",
+				ResponseBody: "ok",
+			}
+			
+			js, err := json.Marshal(response)
+			if err != nil {
+				log.Println(err)
+			}
+			
+			session.connection.WriteMessage(1, js)
 		case "deleteFile":
 			log.Println("Getting deleteFile...")
 			var deleteFileRequest DeleteFileRequest
@@ -254,7 +247,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			
 			log.Println("filePath: " + filePath)
 		
-			err = os.Remove(filePath)
+			err = os.RemoveAll(filePath)
 			if err != nil {
 				log.Println(err)
 			}
@@ -270,7 +263,82 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			}
 			
 			session.connection.WriteMessage(1, js)
-		}		
+		case "newFile":
+			log.Println("Getting newFile...")
+			var newFileRequest NewFileRequest
+			if err := json.Unmarshal(body, &newFileRequest); err != nil {
+				log.Println(err)
+			}
+			var filePath string = newFileRequest.FilePath
+			
+			log.Println("filePath: " + filePath)
+			
+			var proposedFilePath = filePath
+			for i := 1; i < 1000; i++ {
+				if fileExists(proposedFilePath) {
+					proposedFilePath = filePath + " " + strconv.Itoa(i)
+					log.Println("Trying " + proposedFilePath)
+				} else {
+					break
+				}
+			}
+		
+			emptyFile, err := os.Create(proposedFilePath)
+			if err != nil {
+				log.Fatal(err)
+			}
+			emptyFile.Close()
+			
+			response := FileResponse {
+				ResponseType: "newFile",
+				ResponseBody: "ok",
+			}
+			
+			js, err := json.Marshal(response)
+			if err != nil {
+				log.Println(err)
+			}
+			
+			session.connection.WriteMessage(1, js)
+			
+		case "newFolder":
+			log.Println("Getting newFolder...")
+			var newFolderRequest NewFolderRequest
+			if err := json.Unmarshal(body, &newFolderRequest); err != nil {
+				log.Println(err)
+			}
+			var filePath string = newFolderRequest.FilePath
+			
+			log.Println("filePath: " + filePath)
+			
+			var proposedFilePath = filePath
+			for i := 1; i < 1000; i++ {
+				if fileExists(proposedFilePath) {
+					proposedFilePath = filePath + " " + strconv.Itoa(i)
+					log.Println("Trying " + proposedFilePath)
+				} else {
+					break
+				}
+			}
+		
+			err := os.Mkdir(proposedFilePath, 0744)
+			if err != nil {
+				log.Println(err)
+			}
+			
+			response := FileResponse {
+				ResponseType: "newFolder",
+				ResponseBody: "ok",
+			}
+			
+			js, err := json.Marshal(response)
+			if err != nil {
+				log.Println(err)
+			}
+			
+			session.connection.WriteMessage(1, js)
+			
+		}	
 	}
 
 	log.Println("Exiting handleWebSocket")
@@ -284,37 +352,6 @@ func copyFile(session *webSocketSession, origin string, destination string) {
 	}
 	defer from.Close()
 	
-	ctx := context.Background()
-	r := progress.NewReader(from)
-	fileInfo, err := from.Stat()
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	size := fileInfo.Size()
-	
-	go func() {
-		progressChan := progress.NewTicker(ctx, r, size, 1*time.Second)
-		for p := range progressChan {
-			fileOpProgress := FileOperationProgress {
-				PercentRemaining: p.Remaining().Round(time.Second),
-			}
-			
-			response := FileResponse {
-				ResponseType: "fileProgress",
-				ResponseBody: fileOpProgress,
-			}
-			
-			js, err := json.Marshal(response)
-			if err != nil {
-				log.Println(err)
-			}
-			log.Println(string(js))
-			session.connection.WriteMessage(1, js)
-		}
-		log.Println("\rdownload is completed")
-	}()
-	
 	to, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Println(err)
@@ -325,4 +362,24 @@ func copyFile(session *webSocketSession, origin string, destination string) {
 	if err != nil {
 		log.Println(err)
 	}
+	
+	response := FileResponse {
+		ResponseType: "copyFle",
+		ResponseBody: "ok",
+	}
+	
+	js, err := json.Marshal(response)
+	if err != nil {
+		log.Println(err)
+	}
+	
+	session.connection.WriteMessage(1, js)
+}
+
+func fileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
 }
