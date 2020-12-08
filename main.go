@@ -158,16 +158,6 @@ func createRestServer(port int) *http.Server {
 func main() {	
 	os.Setenv("TMPDIR", "/var/tmp/")
 	nonRootUser := os.Getenv("NonRootUser")	
-	
-	go func() {
-		for {
-			autoUpdate()
-			time.Sleep(10 * time.Minute)
-		}
-	}()
-
-	// Setup our Ctrl+C handler
-	SetupCloseHandler()
 
 	app, err := newWebSocketApp()
 	if err != nil {
@@ -183,11 +173,21 @@ func main() {
 	// Create a WaitGroup to manage the four servers
 	// https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f
 	wg := new(sync.WaitGroup)
-	wg.Add(2)
 	
 	if u.Uid == 0 { // I'm root!
+		go func() {
+			for {
+				autoUpdate()
+				time.Sleep(10 * time.Minute)
+			}
+		}()
+	
+		// Setup our Ctrl+C handler
+		SetupCloseHandler()
+		
 		// standard root websocket application
 		go func() {
+			wg.Add(1)
 			rootSrv := &http.Server{
 				Handler:      app.router,
 				Addr:         "127.0.0.1:26510",
@@ -200,6 +200,7 @@ func main() {
 		
 		// standard root REST application
 		go func() {
+			wg.Add(1)
 			server := createRestServer(26511)
 			if err := server.ListenAndServe(); err != nil {
 				log.Println("Could not listen and serve: ", err)
@@ -209,6 +210,7 @@ func main() {
 	} else {
 		// Non-privileged websocket application	
 		go func() {
+			wg.Add(1)
 			nonRootSrv := &http.Server{
 				Handler:      app.router,
 				WriteTimeout: 15 * time.Second,
@@ -221,6 +223,7 @@ func main() {
 		
 		// Non-privileged REST application
 		go func() {
+			wg.Add(1)
 			if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restHandler()); err != nil {
 				log.Println("Could not listen and serve: ", err)
 			}
