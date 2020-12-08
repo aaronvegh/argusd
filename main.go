@@ -174,7 +174,7 @@ func main() {
 	// https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f
 	wg := new(sync.WaitGroup)
 	
-	if u.Uid == 0 { // I'm root!
+	if u.Uid == "0" { // I'm root!
 		go func() {
 			for {
 				autoUpdate()
@@ -207,29 +207,29 @@ func main() {
 			}
 			wg.Done()
 		}()
-	} else {
-		// Non-privileged websocket application	
-		go func() {
-			wg.Add(1)
-			nonRootSrv := &http.Server{
-				Handler:      app.router,
-				WriteTimeout: 15 * time.Second,
-				ReadTimeout:  15 * time.Second,
-			}
-			ln, _ := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
-			nonRootSrv.Serve(ln)
-			wg.Done()	
-		}()
-		
-		// Non-privileged REST application
-		go func() {
-			wg.Add(1)
-			if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restHandler()); err != nil {
-				log.Println("Could not listen and serve: ", err)
-			}
-			wg.Done()
-		}()
+	
 	}
+		// Non-privileged websocket application	
+	go func() {
+		wg.Add(1)
+		nonRootSrv := &http.Server{
+			Handler:      app.router,
+			WriteTimeout: 15 * time.Second,
+			ReadTimeout:  15 * time.Second,
+		}
+		ln, _ := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
+		nonRootSrv.Serve(ln)
+		wg.Done()	
+	}()
+	
+	// Non-privileged REST application
+	go func() {
+		wg.Add(1)
+		if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restHandler()); err != nil {
+			log.Println("Could not listen and serve: ", err)
+		}
+		wg.Done()
+	}()
 	
 	wg.Wait()
 
