@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/user"
 	"io"
 	"net/http"
 	"os/exec"
@@ -34,6 +35,13 @@ func handleGetFile(w http.ResponseWriter, r *http.Request) {
 
 	file, err := ioutil.ReadFile(p["path"])
 	if err != nil {
+		u, err := user.Current()
+		if err != nil {
+			log.Printf("Error getting user: %s", err)
+			return
+		}
+		log.Println("While fetching %s as user %s", p["path"], u.Uid)
+		log.Println("Error: %s", err)
 		w.WriteHeader(404)
 	}
 	stringFile := string(file)

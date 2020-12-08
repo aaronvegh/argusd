@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -57,16 +58,6 @@ func newWebSocketApp() (*webSocketApp, error) {
 	app.router.HandleFunc("/fileOperations", app.handleFileOperations).Methods("GET")
 
 	return app, nil
-}
-
-func (app *webSocketApp) run(port string) error {
-	srv := &http.Server{
-		Handler:      app.router,
-		Addr:         "127.0.0.1:" + port,
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
-	}
-	return srv.ListenAndServe()
 }
 
 // SetupCloseHandler creates a 'listener' on a new goroutine which will notify the
@@ -135,22 +126,7 @@ var (
 	Version = ""
 )
 
-func main() {	
-	os.Setenv("TMPDIR", "/var/tmp/")
-	// nonRootUser := os.Getenv("NonRootUser") // why isn't this working?
-	nonRootUser := "aaron"
-	log.Println("NonRootUser: " + nonRootUser)
-	
-	go func() {
-		for {
-			autoUpdate()
-			time.Sleep(10 * time.Minute)
-		}
-	}()
-
-	// Setup our Ctrl+C handler
-	SetupCloseHandler()
-
+func restHandler() http.Handler {
 	restApp := mux.NewRouter()
 	restApp.Use(AuthenticationMiddleware)
 	restApp.HandleFunc("/getVersion", handleGetVersion).Methods("GET")
@@ -167,7 +143,31 @@ func main() {
 	restApp.HandleFunc("/packages/getInfo", handlePackageInfo).Methods("POST")
 	restApp.HandleFunc("/packages/search", handleFindPackages).Methods("POST")
 	restApp.HandleFunc("/packages/upgradable/{distro}", handleUpgradable).Methods("GET")
+	return restApp
+}
+
+func createRestServer(port int) *http.Server {
+	server := http.Server {
+		Addr: fmt.Sprintf( "127.0.0.1:%v", port),
+		Handler: restHandler(),
+	}
+	return &server
+}
+
+func main() {	
+	os.Setenv("TMPDIR", "/var/tmp/")
+	nonRootUser := os.Getenv("NonRootUser")	
 	
+	go func() {
+		for {
+			autoUpdate()
+			time.Sleep(10 * time.Minute)
+		}
+	}()
+
+	// Setup our Ctrl+C handler
+	SetupCloseHandler()
+
 	app, err := newWebSocketApp()
 	if err != nil {
 		log.Println("Could not create app:", err)
@@ -194,7 +194,6 @@ func main() {
 	go func() {
 		nonRootSrv := &http.Server{
 			Handler:      app.router,
-			Addr:         "127.0.0.1:26610",
 			WriteTimeout: 15 * time.Second,
 			ReadTimeout:  15 * time.Second,
 		}
@@ -205,7 +204,8 @@ func main() {
 	
 	// standard root REST application
 	go func() {
-		if err := http.ListenAndServe("127.0.0.1:26511", restApp); err != nil {
+		server := createRestServer(26511)
+		if err := server.ListenAndServe(); err != nil {
 			log.Println("Could not listen and serve: ", err)
 		}
 		wg.Done()
@@ -213,7 +213,7 @@ func main() {
 	
 	// Non-privileged REST application
 	go func() {
-		if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restApp); err != nil {
+		if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restHandler()); err != nil {
 			log.Println("Could not listen and serve: ", err)
 		}
 		wg.Done()

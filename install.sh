@@ -11,7 +11,7 @@ USER=$4
 SCRIPTNAME="argusd-$OS-$ARCH"
 
 echo -e "$ACCESSKEY\n" >> /etc/argusd.conf
-chmod 600 /etc/argusd.conf
+chmod 644 /etc/argusd.conf
 
 (cd /usr/local/bin/ && curl -O http://argusd.s3.amazonaws.com/argusd/$SCRIPTNAME)
 mv /usr/local/bin/$SCRIPTNAME /usr/local/bin/argusd

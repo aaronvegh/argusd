@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/user"
 	"strconv"
 	"syscall"
 	"time"
@@ -138,7 +139,12 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			session.connection.WriteMessage(1, js)
 
 		case "directoryList":
-			log.Println("Getting directoryList...")
+			u, err := user.Current()
+			if err != nil {
+				log.Printf("Error getting user: %s", err)
+				return
+			}
+			log.Println("Getting directoryList for ", u.Uid)
 			var directoryRequest DirectoryRequest
 			if err := json.Unmarshal(body, &directoryRequest); err != nil {
 				log.Println(err)
