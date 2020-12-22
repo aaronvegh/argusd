@@ -108,8 +108,17 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 		}
 
 		switch fileRequest.RequestType {
+		case "whoami":
+			log.Println("Starting whoami handler")
+			u, err := user.Current()
+			if err != nil {
+				log.Printf("Error getting user: %s", err)
+				return
+			}
+			log.Println("User is ", u.Uid)
 		case "fileContents":
 			log.Println("Getting filecontents...")
+			
 			var fileRequest FileContentRequest
 			if err := json.Unmarshal(body, &fileRequest); err != nil {
 				log.Println(err)

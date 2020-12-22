@@ -101,6 +101,16 @@ func handleGetVersion(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
+func handleWhoAmI(w http.ResponseWriter, r *http.Request) {
+	log.Println("Starting whoami handler")
+	u, err := user.Current()
+	if err != nil {
+		log.Printf("Error getting user: %s", err)
+		return
+	}
+	fmt.Fprintf(w, "%s\n", u.Uid)
+}
+
 func AuthenticationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if token := r.Header.Get("X-Argus-Token"); token != "" {
@@ -117,9 +127,12 @@ func AuthenticationMiddleware(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
+			log.Println("Error: Token doesn't match.")
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		} else {
+			log.Println("Error: Token not present in headers.")
+			http.Error(w, "Forbidden", http.StatusForbidden)
 		}
-		log.Println("Error: Token doesn't match.")
-		http.Error(w, "Forbidden", http.StatusForbidden)
 	})
 }
 
@@ -130,12 +143,15 @@ var (
 func restHandler() http.Handler {
 	restApp := mux.NewRouter()
 	restApp.Use(AuthenticationMiddleware)
+	restApp.HandleFunc("/whoami", handleWhoAmI).Methods("GET")
 	restApp.HandleFunc("/getVersion", handleGetVersion).Methods("GET")
 	restApp.HandleFunc("/getFile", handleGetFile).Methods("POST")
 	restApp.HandleFunc("/chown", handleChownFile).Methods("POST")
 	restApp.HandleFunc("/chmod", handleChmodFile).Methods("POST")
 	restApp.HandleFunc("/downloadFile", handleDownloadFile).Methods("POST")
 	restApp.HandleFunc("/uploadFile", handleUploadFile).Methods("POST")
+	restApp.HandleFunc("/getCron", handleGetCron).Methods("GET")
+	restApp.HandleFunc("/setCron", handleSetCron).Methods("POST")
 	restApp.HandleFunc("/getUsersGroups/{username}", handleGetUsersGroups).Methods("GET")
 	restApp.HandleFunc("/updateGroups", handleUpdateGroups).Methods("POST")
 	restApp.HandleFunc("/newUser", handleNewUser).Methods("POST")
@@ -144,6 +160,9 @@ func restHandler() http.Handler {
 	restApp.HandleFunc("/packages/getInfo", handlePackageInfo).Methods("POST")
 	restApp.HandleFunc("/packages/search", handleFindPackages).Methods("POST")
 	restApp.HandleFunc("/packages/upgradable/{distro}", handleUpgradable).Methods("GET")
+	restApp.HandleFunc("/restProxy", handleRestProxy).Methods("POST")
+	restApp.HandleFunc("/getCaddyConfig", handleGetCaddyConfig).Methods("GET")
+	restApp.HandleFunc("/setCaddyConfig", handleSetCaddyConfig).Methods("POST")
 	return restApp
 }
 
@@ -158,7 +177,8 @@ func createRestServer(port int) *http.Server {
 func main() {	
 	os.Setenv("TMPDIR", "/var/tmp/")
 	nonRootUser := os.Getenv("NonRootUser")	
-
+	log.Println("User from env: ", nonRootUser)
+	
 	app, err := newWebSocketApp()
 	if err != nil {
 		log.Println("Could not create app:", err)
@@ -173,6 +193,11 @@ func main() {
 	// Create a WaitGroup to manage the four servers
 	// https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f
 	wg := new(sync.WaitGroup)
+	if u.Uid == "0" {
+		wg.Add(4)
+	} else {
+		wg.Add(2)
+	}
 	
 	if u.Uid == "0" { // I'm root!
 		go func() {
@@ -187,49 +212,49 @@ func main() {
 		
 		// standard root websocket application
 		go func() {
-			wg.Add(1)
 			rootSrv := &http.Server{
 				Handler:      app.router,
 				Addr:         "127.0.0.1:26510",
 				WriteTimeout: 15 * time.Second,
 				ReadTimeout:  15 * time.Second,
 			}
+			log.Println("Mounting root websocket server at port 26510.")
 			rootSrv.ListenAndServe()
 			wg.Done()
 		}()
 		
 		// standard root REST application
 		go func() {
-			wg.Add(1)
 			server := createRestServer(26511)
+			log.Println("Mounting root REST server at port 26511.")
 			if err := server.ListenAndServe(); err != nil {
 				log.Println("Could not listen and serve: ", err)
 			}
 			wg.Done()
 		}()
 	
-	}
 		// Non-privileged websocket application	
-	go func() {
-		wg.Add(1)
-		nonRootSrv := &http.Server{
-			Handler:      app.router,
-			WriteTimeout: 15 * time.Second,
-			ReadTimeout:  15 * time.Second,
-		}
-		ln, _ := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
-		nonRootSrv.Serve(ln)
-		wg.Done()	
-	}()
-	
-	// Non-privileged REST application
-	go func() {
-		wg.Add(1)
-		if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restHandler()); err != nil {
-			log.Println("Could not listen and serve: ", err)
-		}
-		wg.Done()
-	}()
+		go func() {
+			nonRootSrv := &http.Server{
+				Handler:      app.router,
+				WriteTimeout: 15 * time.Second,
+				ReadTimeout:  15 * time.Second,
+			}
+			log.Println("Mounting non-privilege websocket server at port 26610.")
+			ln, _ := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
+			nonRootSrv.Serve(ln)
+			wg.Done()	
+		}()
+		
+		// Non-privileged REST application
+		go func() {
+			log.Println("Mounting non-privilege REST server at port 26611.")
+			if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restHandler()); err != nil {
+				log.Println("Could not listen and serve: ", err)
+			}
+			wg.Done()
+		}()
+	}
 	
 	wg.Wait()
 

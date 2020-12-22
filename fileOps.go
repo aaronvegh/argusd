@@ -32,6 +32,13 @@ type NewUser struct {
 func handleGetFile(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
+	
+	u, err := user.Current()
+	if err != nil {
+		log.Printf("Error getting user: %s", err)
+		return
+	}
+	log.Println("User is ", u.Uid)
 
 	file, err := ioutil.ReadFile(p["path"])
 	if err != nil {
@@ -136,6 +143,49 @@ func handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(dst, file); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	
+	w.WriteHeader(200)
+}
+
+func handleGetCron(w http.ResponseWriter, r *http.Request) {
+	argusCronPath := "/etc/cron.d/argus"
+	cronExists, _ := exists("/etc/cron.d")
+	cronFileExists, _ := exists(argusCronPath)
+	if !cronExists {
+		w.WriteHeader(500) // cron not installed?
+	} else {
+		if !cronFileExists { // first time, create our file
+			emptyFile, err := os.Create(argusCronPath)
+			if err != nil {
+				log.Fatal(err)
+			}
+			emptyFile.Close()
+		}
+	}
+	
+	log.Println("Get contents for " + argusCronPath)
+	crontab, err := ioutil.ReadFile(argusCronPath)
+	if err != nil {
+		log.Println(err)
+	}
+	w.Write(crontab)	
+}
+
+func handleSetCron(w http.ResponseWriter, r *http.Request) {
+	argusCronPath := "/etc/cron.d/argus"
+	
+	var p map[string]string
+	err := json.NewDecoder(r.Body).Decode(&p)
+	if err != nil {
+		log.Println(err)
+	}
+	
+	stringBytes := []byte(p["crontab"])
+	
+	err2 := ioutil.WriteFile(argusCronPath, stringBytes, 0644)
+	if err2 != nil {
+		log.Println(err2)
 	}
 	
 	w.WriteHeader(200)
@@ -329,4 +379,12 @@ func hashAndSalt(pwd []byte) string {
 	// GenerateFromPassword returns a byte slice so we need to
 	// convert the bytes to a string and return it
 	return string(hash)
+}
+
+// exists returns whether the given file or directory exists
+func exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil { return true, nil }
+	if os.IsNotExist(err) { return false, nil }
+	return false, err
 }
