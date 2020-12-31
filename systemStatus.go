@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/KarpelesLab/strftime"
 	"github.com/shirou/gopsutil/host"
 	"log"
 	"net/http"
@@ -37,6 +38,7 @@ func (ses *webSocketSession) runSystemStatus() {
 			"Platform":        hostInfo.Platform,
 			"PlatformFamily":  hostInfo.PlatformFamily,
 			"PlatformVersion": hostInfo.PlatformVersion,
+			"SystemTime":	   strftime.EnFormat(`%H:%M:%S`, time.Now()),
 		}
 
 		if err := ses.connection.WriteJSON(payload); err != nil {

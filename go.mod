@@ -3,6 +3,7 @@ module argusd
 go 1.14
 
 require (
+	github.com/KarpelesLab/strftime v0.1.3
 	github.com/aws/aws-sdk-go v1.30.19
 	github.com/creack/golisten v0.0.0-20150621002859-f2c7a6ba3fdc
 	github.com/gorilla/mux v1.7.4

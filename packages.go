@@ -27,7 +27,7 @@ func handleInstalledPackages(w http.ResponseWriter, r *http.Request) {
 
 	listCommand := ""
 	if strings.Contains(distro, "fedora") || strings.Contains(distro, "centos") {
-		listCommand = "yum list installed | awk 'NR>1 {print $1,$2}'"
+		listCommand = "yum list installed | awk 'NR>1{print $1,$2}'"
 	} else {
 		listCommand = "dpkg -l | awk 'NR>5{print $2,$3}'"
 	}

@@ -178,6 +178,9 @@ func main() {
 	os.Setenv("TMPDIR", "/var/tmp/")
 	nonRootUser := os.Getenv("NonRootUser")	
 	log.Println("User from env: ", nonRootUser)
+	if len(nonRootUser) == 0 {
+		nonRootUser = ""
+	}
 	
 	app, err := newWebSocketApp()
 	if err != nil {
@@ -193,10 +196,17 @@ func main() {
 	// Create a WaitGroup to manage the four servers
 	// https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f
 	wg := new(sync.WaitGroup)
-	if u.Uid == "0" {
+	if u.Uid == "0" && nonRootUser != "" {
 		wg.Add(4)
 	} else {
 		wg.Add(2)
+	}
+	
+	webSocketServer := &http.Server{
+		Handler:      app.router,
+		Addr:         "127.0.0.1:26510",
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
 	}
 	
 	if u.Uid == "0" { // I'm root!
@@ -212,14 +222,8 @@ func main() {
 		
 		// standard root websocket application
 		go func() {
-			rootSrv := &http.Server{
-				Handler:      app.router,
-				Addr:         "127.0.0.1:26510",
-				WriteTimeout: 15 * time.Second,
-				ReadTimeout:  15 * time.Second,
-			}
 			log.Println("Mounting root websocket server at port 26510.")
-			rootSrv.ListenAndServe()
+			webSocketServer.ListenAndServe()
 			wg.Done()
 		}()
 		
@@ -232,17 +236,14 @@ func main() {
 			}
 			wg.Done()
 		}()
+	}
 	
+	if nonRootUser != "" {
 		// Non-privileged websocket application	
 		go func() {
-			nonRootSrv := &http.Server{
-				Handler:      app.router,
-				WriteTimeout: 15 * time.Second,
-				ReadTimeout:  15 * time.Second,
-			}
 			log.Println("Mounting non-privilege websocket server at port 26610.")
 			ln, _ := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
-			nonRootSrv.Serve(ln)
+			webSocketServer.Serve(ln)
 			wg.Done()	
 		}()
 		
