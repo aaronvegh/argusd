@@ -8,6 +8,8 @@ require (
 	github.com/creack/golisten v0.0.0-20150621002859-f2c7a6ba3fdc
 	github.com/gorilla/mux v1.7.4
 	github.com/gorilla/websocket v1.4.2
+	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
+	github.com/lestrrat-go/strftime v1.0.4 // indirect
 	github.com/machinebox/progress v0.2.0
 	github.com/mackerelio/go-osstat v0.1.0
 	github.com/mitchellh/ioprogress v0.0.0-20180201004757-6a23b12fa88e

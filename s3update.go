@@ -80,7 +80,7 @@ func AutoUpdate(u Updater) error {
 func generateS3ReleaseKey(path string) string {
 	path = strings.Replace(path, "{{OS}}", runtime.GOOS, -1)
 	path = strings.Replace(path, "{{ARCH}}", runtime.GOARCH, -1)
-
+	
 	return path
 }
 

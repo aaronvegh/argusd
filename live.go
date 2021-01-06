@@ -27,8 +27,7 @@ type LogFileRequest struct {
 }
 
 func (app *webSocketApp) handleLiveResponse(w http.ResponseWriter, r *http.Request) {
-	log.Println("This is /liveResponse starting")
-
+	log.Println("Starting /liveResponse...")
 	conn, err := app.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
@@ -91,7 +90,6 @@ func (app *webSocketApp) handleLiveResponse(w http.ResponseWriter, r *http.Reque
 			var options string = logFileRequest.Options
 			
 			logfileCommand := command + " " + options + " " + path
-			log.Println(logfileCommand)
 			session.runLiveCommand(logfileCommand)
 		}
 	}
@@ -122,7 +120,6 @@ func (ses *webSocketSession) runLiveCommand(command string) {
 
 	s := bufio.NewScanner(io.MultiReader(stdout, stderr))
 	for s.Scan() {
-		log.Println(string(s.Bytes()))
 		ses.connection.WriteMessage(1, s.Bytes())
 	}
 

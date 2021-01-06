@@ -11,7 +11,8 @@ import (
 	"github.com/creack/golisten"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-
+	"github.com/lestrrat-go/file-rotatelogs"
+	
 	"os"
 	"os/signal"
 	"os/user"
@@ -57,7 +58,7 @@ func newWebSocketApp() (*webSocketApp, error) {
 	app.router.HandleFunc("/dashboard", app.handleDashboard).Methods("GET")
 	app.router.HandleFunc("/liveResponse", app.handleLiveResponse).Methods("GET")
 	app.router.HandleFunc("/fileOperations", app.handleFileOperations).Methods("GET")
-
+	log.Println("Priv socket app = ", app)
 	return app, nil
 }
 
@@ -174,7 +175,19 @@ func createRestServer(port int) *http.Server {
 	return &server
 }
 
-func main() {	
+func main() {
+	logf, err := rotatelogs.New(
+		"/root/.arguslogs/log.%Y%m%d%H%M",
+		rotatelogs.WithLinkName("/root/.arguslogs/log"),
+		rotatelogs.WithMaxAge(24 * time.Hour),
+		rotatelogs.WithRotationTime(time.Hour),
+	)
+  	if err != nil {
+	  log.Printf("failed to create rotatelogs: %s", err)
+	  return
+  	}
+	log.SetOutput(logf)
+	
 	os.Setenv("TMPDIR", "/var/tmp/")
 	nonRootUser := os.Getenv("NonRootUser")	
 	log.Println("User from env: ", nonRootUser)
@@ -241,9 +254,44 @@ func main() {
 	if nonRootUser != "" {
 		// Non-privileged websocket application	
 		go func() {
+			upgrader2 := websocket.Upgrader{
+				ReadBufferSize:  1024,
+				WriteBufferSize: 1024,
+				CheckOrigin: func(r *http.Request) bool {
+					return true
+				},
+			}
+		
+			router2 := mux.NewRouter()
+			router2.Use(AuthenticationMiddleware)
+		
+			app2 := &webSocketApp{
+				upgrader: upgrader2,
+				router:   router2,
+			}
+			
+			log.Println("Non-priv socket app = ", app2)
+		
+			app2.router.HandleFunc("/systemStatus", app.handleSystemStatus).Methods("GET")
+			app2.router.HandleFunc("/dashboard", app.handleDashboard).Methods("GET")
+			app2.router.HandleFunc("/liveResponse", app.handleLiveResponse).Methods("GET")
+			app2.router.HandleFunc("/fileOperations", app.handleFileOperations).Methods("GET")
+			
+			webSocketServer2 := &http.Server{
+				Handler:      app2.router,
+				WriteTimeout: 15 * time.Second,
+				ReadTimeout:  15 * time.Second,
+			}
 			log.Println("Mounting non-privilege websocket server at port 26610.")
-			ln, _ := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
-			webSocketServer.Serve(ln)
+			ln, err := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
+			if err != nil {
+				log.Fatal(err)
+			}
+			err2 := webSocketServer2.Serve(ln)
+			if err2 != nil {
+				log.Fatal(err2)
+			}
+			
 			wg.Done()	
 		}()
 		
