@@ -1,0 +1,3 @@
+# ignore the compiled argusd binaries
+argusd-*
+

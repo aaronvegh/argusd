@@ -16,7 +16,7 @@ type CaddyConfigResponse struct {
 	Config string
 }
 
-func handleGetCaddyConfig(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleGetCaddyConfig(w http.ResponseWriter, r *http.Request) {
 	
 	argusDirectory := "/etc/caddy/Caddyfile-Argus.d"
 	
@@ -110,7 +110,7 @@ func handleGetCaddyConfig(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
-func handleSetCaddyConfig(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleSetCaddyConfig(w http.ResponseWriter, r *http.Request) {
 	
 	argusDirectory := "/etc/caddy/Caddyfile-Argus.d"
 	

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/creack/golisten"
@@ -54,11 +55,34 @@ func newWebSocketApp() (*webSocketApp, error) {
 		router:   router,
 	}
 
+	// websocket endpoints
 	app.router.HandleFunc("/systemStatus", app.handleSystemStatus).Methods("GET")
 	app.router.HandleFunc("/dashboard", app.handleDashboard).Methods("GET")
 	app.router.HandleFunc("/liveResponse", app.handleLiveResponse).Methods("GET")
 	app.router.HandleFunc("/fileOperations", app.handleFileOperations).Methods("GET")
-	log.Println("Priv socket app = ", app)
+	
+	// REST endpoints
+	app.router.HandleFunc("/whoami", handleWhoAmI).Methods("GET")
+	app.router.HandleFunc("/getVersion", handleGetVersion).Methods("GET")
+	app.router.HandleFunc("/getFile", app.handleGetFile).Methods("POST")
+	app.router.HandleFunc("/chown", app.handleChownFile).Methods("POST")
+	app.router.HandleFunc("/chmod", app.handleChmodFile).Methods("POST")
+	app.router.HandleFunc("/downloadFile", app.handleDownloadFile).Methods("POST")
+	app.router.HandleFunc("/uploadFile", app.handleUploadFile).Methods("POST")
+	app.router.HandleFunc("/getCron", app.handleGetCron).Methods("GET")
+	app.router.HandleFunc("/setCron", app.handleSetCron).Methods("POST")
+	app.router.HandleFunc("/getUsersGroups/{username}", app.handleGetUsersGroups).Methods("GET")
+	app.router.HandleFunc("/updateGroups", app.handleUpdateGroups).Methods("POST")
+	app.router.HandleFunc("/newUser", app.handleNewUser).Methods("POST")
+	app.router.HandleFunc("/removeUser", app.handleRemoveUser).Methods("POST")
+	app.router.HandleFunc("/packages/all/{distro}", app.handleInstalledPackages).Methods("GET")
+	app.router.HandleFunc("/packages/getInfo", app.handlePackageInfo).Methods("POST")
+	app.router.HandleFunc("/packages/search", app.handleFindPackages).Methods("POST")
+	app.router.HandleFunc("/packages/upgradable/{distro}", app.handleUpgradable).Methods("GET")
+	app.router.HandleFunc("/restProxy", app.handleRestProxy).Methods("POST")
+	app.router.HandleFunc("/getCaddyConfig", app.handleGetCaddyConfig).Methods("GET")
+	app.router.HandleFunc("/setCaddyConfig", app.handleSetCaddyConfig).Methods("POST")
+	
 	return app, nil
 }
 
@@ -114,7 +138,19 @@ func handleWhoAmI(w http.ResponseWriter, r *http.Request) {
 
 func AuthenticationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uuidMatcher := `[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`
 		if token := r.Header.Get("X-Argus-Token"); token != "" {
+			matched, err := regexp.MatchString(uuidMatcher, token)
+			if err != nil {
+				// bad regex, so this shouldn't happen right? RIGHT?
+				log.Fatal("Error, fix your auth regex!")
+			}
+			if !matched {
+				log.Println("Error: submitted token is not a valid UUID")
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+			
 			file, err := ioutil.ReadFile("/etc/argusd.conf")
 			if err != nil {
 				log.Println("Error: Can't read config file")
@@ -141,41 +177,8 @@ var (
 	Version = ""
 )
 
-func restHandler() http.Handler {
-	restApp := mux.NewRouter()
-	restApp.Use(AuthenticationMiddleware)
-	restApp.HandleFunc("/whoami", handleWhoAmI).Methods("GET")
-	restApp.HandleFunc("/getVersion", handleGetVersion).Methods("GET")
-	restApp.HandleFunc("/getFile", handleGetFile).Methods("POST")
-	restApp.HandleFunc("/chown", handleChownFile).Methods("POST")
-	restApp.HandleFunc("/chmod", handleChmodFile).Methods("POST")
-	restApp.HandleFunc("/downloadFile", handleDownloadFile).Methods("POST")
-	restApp.HandleFunc("/uploadFile", handleUploadFile).Methods("POST")
-	restApp.HandleFunc("/getCron", handleGetCron).Methods("GET")
-	restApp.HandleFunc("/setCron", handleSetCron).Methods("POST")
-	restApp.HandleFunc("/getUsersGroups/{username}", handleGetUsersGroups).Methods("GET")
-	restApp.HandleFunc("/updateGroups", handleUpdateGroups).Methods("POST")
-	restApp.HandleFunc("/newUser", handleNewUser).Methods("POST")
-	restApp.HandleFunc("/removeUser", handleRemoveUser).Methods("POST")
-	restApp.HandleFunc("/packages/all/{distro}", handleInstalledPackages).Methods("GET")
-	restApp.HandleFunc("/packages/getInfo", handlePackageInfo).Methods("POST")
-	restApp.HandleFunc("/packages/search", handleFindPackages).Methods("POST")
-	restApp.HandleFunc("/packages/upgradable/{distro}", handleUpgradable).Methods("GET")
-	restApp.HandleFunc("/restProxy", handleRestProxy).Methods("POST")
-	restApp.HandleFunc("/getCaddyConfig", handleGetCaddyConfig).Methods("GET")
-	restApp.HandleFunc("/setCaddyConfig", handleSetCaddyConfig).Methods("POST")
-	return restApp
-}
-
-func createRestServer(port int) *http.Server {
-	server := http.Server {
-		Addr: fmt.Sprintf( "127.0.0.1:%v", port),
-		Handler: restHandler(),
-	}
-	return &server
-}
-
 func main() {
+	// Make the logs go brrr
 	logf, err := rotatelogs.New(
 		"/root/.arguslogs/log.%Y%m%d%H%M",
 		rotatelogs.WithLinkName("/root/.arguslogs/log"),
@@ -188,6 +191,7 @@ func main() {
   	}
 	log.SetOutput(logf)
 	
+	// establish the NonRootUser for the unprivileged process
 	os.Setenv("TMPDIR", "/var/tmp/")
 	nonRootUser := os.Getenv("NonRootUser")	
 	log.Println("User from env: ", nonRootUser)
@@ -195,11 +199,7 @@ func main() {
 		nonRootUser = ""
 	}
 	
-	app, err := newWebSocketApp()
-	if err != nil {
-		log.Println("Could not create app:", err)
-	}
-	
+	// get the current user to ensure this runs as root
 	u, err := user.Current()
 	if err != nil {
 		log.Printf("Error getting user: %s", err)
@@ -215,12 +215,11 @@ func main() {
 		wg.Add(2)
 	}
 	
-	webSocketServer := &http.Server{
-		Handler:      app.router,
-		Addr:         "127.0.0.1:26510",
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
+	app, err := newWebSocketApp()
+	if err != nil {
+		log.Fatal("Could not create WebSocketApp:", err)
 	}
+
 	
 	if u.Uid == "0" { // I'm root!
 		go func() {
@@ -235,71 +234,25 @@ func main() {
 		
 		// standard root websocket application
 		go func() {
-			log.Println("Mounting root websocket server at port 26510.")
-			webSocketServer.ListenAndServe()
-			wg.Done()
-		}()
-		
-		// standard root REST application
-		go func() {
-			server := createRestServer(26511)
-			log.Println("Mounting root REST server at port 26511.")
+			log.Println("Mounting root REST server at port 26510.")
+			server := &http.Server{
+				Handler:      app.router,
+				WriteTimeout: 15 * time.Second,
+				ReadTimeout:  15 * time.Second,
+				Addr:         ":26510",
+			}
 			if err := server.ListenAndServe(); err != nil {
-				log.Println("Could not listen and serve: ", err)
+				log.Fatal("Could not listen and serve privileged app: ", err)
 			}
 			wg.Done()
 		}()
 	}
 	
 	if nonRootUser != "" {
-		// Non-privileged websocket application	
 		go func() {
-			upgrader2 := websocket.Upgrader{
-				ReadBufferSize:  1024,
-				WriteBufferSize: 1024,
-				CheckOrigin: func(r *http.Request) bool {
-					return true
-				},
-			}
-		
-			router2 := mux.NewRouter()
-			router2.Use(AuthenticationMiddleware)
-		
-			app2 := &webSocketApp{
-				upgrader: upgrader2,
-				router:   router2,
-			}
-			
-			log.Println("Non-priv socket app = ", app2)
-		
-			app2.router.HandleFunc("/systemStatus", app.handleSystemStatus).Methods("GET")
-			app2.router.HandleFunc("/dashboard", app.handleDashboard).Methods("GET")
-			app2.router.HandleFunc("/liveResponse", app.handleLiveResponse).Methods("GET")
-			app2.router.HandleFunc("/fileOperations", app.handleFileOperations).Methods("GET")
-			
-			webSocketServer2 := &http.Server{
-				Handler:      app2.router,
-				WriteTimeout: 15 * time.Second,
-				ReadTimeout:  15 * time.Second,
-			}
-			log.Println("Mounting non-privilege websocket server at port 26610.")
-			ln, err := golisten.Listen(nonRootUser, "tcp", "127.0.0.1:26610")
-			if err != nil {
-				log.Fatal(err)
-			}
-			err2 := webSocketServer2.Serve(ln)
-			if err2 != nil {
-				log.Fatal(err2)
-			}
-			
-			wg.Done()	
-		}()
-		
-		// Non-privileged REST application
-		go func() {
-			log.Println("Mounting non-privilege REST server at port 26611.")
-			if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26611", restHandler()); err != nil {
-				log.Println("Could not listen and serve: ", err)
+			log.Println("Mounting non-privilege REST server at port 26511.")
+			if err := golisten.ListenAndServe("aaron", "127.0.0.1:26511", app.router); err != nil {
+				log.Println("Could not listen and serve non-privileged app: ", err)
 			}
 			wg.Done()
 		}()

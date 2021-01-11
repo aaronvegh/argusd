@@ -21,7 +21,7 @@ type SearchResultPackage struct {
 	PackageDescription string
 }
 
-func handleInstalledPackages(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleInstalledPackages(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	distro := vars["distro"]
 
@@ -80,7 +80,7 @@ func handleInstalledPackages(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func handlePackageInfo(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handlePackageInfo(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {
@@ -109,7 +109,7 @@ func handlePackageInfo(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(out.String()))
 }
 
-func handleFindPackages(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleFindPackages(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {
@@ -173,7 +173,7 @@ func handleFindPackages(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func handleUpgradable(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleUpgradable(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	distro := vars["distro"]
 

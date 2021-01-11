@@ -29,7 +29,7 @@ type NewUser struct {
 	HasHomeDir bool
 }
 
-func handleGetFile(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
 	
@@ -55,7 +55,7 @@ func handleGetFile(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(stringFile))
 }
 
-func handleChownFile(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleChownFile(w http.ResponseWriter, r *http.Request) {
 	log.Println("Handling chown file...")
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
@@ -75,7 +75,7 @@ func handleChownFile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-func handleChmodFile(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleChmodFile(w http.ResponseWriter, r *http.Request) {
 	log.Println("Handling chmod file...")
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
@@ -97,7 +97,7 @@ func handleChmodFile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-func handleDownloadFile(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 	log.Println("Handling downloadFile")
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
@@ -110,7 +110,7 @@ func handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, path)
 }
 
-func handleUploadFile(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	log.Println("Handling uploadFile")
 	
 	// Parse our multipart form, 10 << 20 specifies a maximum
@@ -148,7 +148,7 @@ func handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-func handleGetCron(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleGetCron(w http.ResponseWriter, r *http.Request) {
 	argusCronPath := "/etc/cron.d/argus"
 	cronExists, _ := exists("/etc/cron.d")
 	cronFileExists, _ := exists(argusCronPath)
@@ -172,7 +172,7 @@ func handleGetCron(w http.ResponseWriter, r *http.Request) {
 	w.Write(crontab)	
 }
 
-func handleSetCron(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleSetCron(w http.ResponseWriter, r *http.Request) {
 	argusCronPath := "/etc/cron.d/argus"
 	
 	var p map[string]string
@@ -191,7 +191,7 @@ func handleSetCron(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-func handleGetUsersGroups(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleGetUsersGroups(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	cmd := exec.Command("/usr/bin/id", "-Gn", vars["username"])
 	var out bytes.Buffer
@@ -203,7 +203,7 @@ func handleGetUsersGroups(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(out.String()))
 }
 
-func handleUpdateGroups(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleUpdateGroups(w http.ResponseWriter, r *http.Request) {
 	var p GroupUpdate
 	err := json.NewDecoder(r.Body).Decode(&p)
 
@@ -226,7 +226,7 @@ func handleUpdateGroups(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-func handleNewUser(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleNewUser(w http.ResponseWriter, r *http.Request) {
 	var n NewUser
 	err := json.NewDecoder(r.Body).Decode(&n)
 	if err != nil {
@@ -254,7 +254,7 @@ func handleNewUser(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(out.String()))
 }
 
-func handleRemoveUser(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {

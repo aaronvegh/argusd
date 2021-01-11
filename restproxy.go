@@ -22,7 +22,7 @@ type ProxyRequest struct {
 	Headers map[string]string
 }
 
-func handleRestProxy(w http.ResponseWriter, r *http.Request) {
+func (app *webSocketApp) handleRestProxy(w http.ResponseWriter, r *http.Request) {
 	log.Println("Starting REST Proxy Request...")
 	var req ProxyRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
