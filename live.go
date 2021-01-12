@@ -21,9 +21,9 @@ type InstallRequest struct {
 }
 
 type LogFileRequest struct {
-	Command string 	// tail or cat or zcat...
-	Path string		// the logfile path
-	Options string	// things like "-f" or "-n 50"
+	Command string // tail or cat or zcat...
+	Path    string // the logfile path
+	Options string // things like "-f" or "-n 50"
 }
 
 func (app *webSocketApp) handleLiveResponse(w http.ResponseWriter, r *http.Request) {
@@ -84,17 +84,15 @@ func (app *webSocketApp) handleLiveResponse(w http.ResponseWriter, r *http.Reque
 			if err := json.Unmarshal(body, &logFileRequest); err != nil {
 				log.Println(err)
 			}
-			
+
 			var command string = logFileRequest.Command
 			var path string = logFileRequest.Path
 			var options string = logFileRequest.Options
-			
+
 			logfileCommand := command + " " + options + " " + path
 			session.runLiveCommand(logfileCommand)
 		}
 	}
-
-	log.Println("Exiting handleWebSocket")
 }
 
 func (ses *webSocketSession) runLiveCommand(command string) {
