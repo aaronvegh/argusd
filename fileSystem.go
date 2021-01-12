@@ -26,43 +26,43 @@ type FileResponse struct {
 // RequestType "directoryList"
 type DirectoryRequest struct {
 	DirectoryPath string
-	User string
+	User          string
 }
 
 // RequestType "fileContents"
 type FileContentRequest struct {
 	FilePath string
-	User string
+	User     string
 }
 
 // RequestType "moveFile"
 type MoveFileRequest struct {
-	OriginPath string
+	OriginPath      string
 	DestinationPath string
-	User string
+	User            string
 }
 
 // RequestType "copyFile"
 type CopyFileRequest struct {
-	OriginPath string
+	OriginPath      string
 	DestinationPath string
-	User string
+	User            string
 }
 
 // RequestType "deleteFile"
 type DeleteFileRequest struct {
 	FilePath string
-	User string
+	User     string
 }
 
 type NewFileRequest struct {
 	FilePath string
-	User string
+	User     string
 }
 
 type NewFolderRequest struct {
 	FilePath string
-	User string
+	User     string
 }
 
 type FileOperationProgress struct {
@@ -118,7 +118,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			log.Println("User is ", u.Uid)
 		case "fileContents":
 			log.Println("Getting filecontents...")
-			
+
 			var fileRequest FileContentRequest
 			if err := json.Unmarshal(body, &fileRequest); err != nil {
 				log.Println(err)
@@ -192,7 +192,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			}
 
 			session.connection.WriteMessage(1, js)
-			
+
 		case "copyFile":
 			log.Println("Getting copyfile...")
 			var copyFileRequest CopyFileRequest
@@ -202,12 +202,12 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			}
 			var origin string = copyFileRequest.OriginPath
 			var destination string = copyFileRequest.DestinationPath
-			
+
 			log.Println("origin: " + origin)
 			log.Println("dest: " + destination)
-			
+
 			copyFile(session, origin, destination)
-			  
+
 		case "moveFile":
 			log.Println("Getting moveFile...")
 			var moveFileRequest MoveFileRequest
@@ -217,40 +217,40 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			}
 			var origin string = moveFileRequest.OriginPath
 			var destination string = moveFileRequest.DestinationPath
-			
+
 			log.Println("origin: " + origin)
 			log.Println("dest: " + destination)
-			
+
 			from, err := os.Open(origin)
 			if err != nil {
 				log.Println(err)
 				return
 			}
 			defer from.Close()
-			
+
 			err = os.Rename(origin, destination)
 			if err != nil {
 				if err, ok := err.(*os.LinkError); ok {
 					oserr := err.Err.(syscall.Errno)
 					if oserr == syscall.EXDEV {
-						log.Println("Failed because you are copying a file cross filesystems; copy instead\n")
+						log.Println("Failed because you are copying a file cross filesystems; copy instead")
 						copyFile(session, origin, destination)
 					} else {
-						log.Println("Unknown OS Error is %d\n", oserr)
+						log.Printf("Unknown OS Error is %d\n", oserr)
 					}
 					return
 				}
 			}
-			response := FileResponse {
+			response := FileResponse{
 				ResponseType: "moveFile",
 				ResponseBody: "ok",
 			}
-			
+
 			js, err := json.Marshal(response)
 			if err != nil {
 				log.Println(err)
 			}
-			
+
 			session.connection.WriteMessage(1, js)
 		case "deleteFile":
 			log.Println("Getting deleteFile...")
@@ -259,24 +259,24 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 				log.Println(err)
 			}
 			var filePath string = deleteFileRequest.FilePath
-			
+
 			log.Println("filePath: " + filePath)
-		
+
 			err = os.RemoveAll(filePath)
 			if err != nil {
 				log.Println(err)
 			}
-			
-			response := FileResponse {
+
+			response := FileResponse{
 				ResponseType: "deleteFile",
 				ResponseBody: "ok",
 			}
-			
+
 			js, err := json.Marshal(response)
 			if err != nil {
 				log.Println(err)
 			}
-			
+
 			session.connection.WriteMessage(1, js)
 		case "newFile":
 			log.Println("Getting newFile...")
@@ -285,9 +285,9 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 				log.Println(err)
 			}
 			var filePath string = newFileRequest.FilePath
-			
+
 			log.Println("filePath: " + filePath)
-			
+
 			var proposedFilePath = filePath
 			for i := 1; i < 1000; i++ {
 				if fileExists(proposedFilePath) {
@@ -297,25 +297,25 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 					break
 				}
 			}
-		
+
 			emptyFile, err := os.Create(proposedFilePath)
 			if err != nil {
 				log.Fatal(err)
 			}
 			emptyFile.Close()
-			
-			response := FileResponse {
+
+			response := FileResponse{
 				ResponseType: "newFile",
 				ResponseBody: "ok",
 			}
-			
+
 			js, err := json.Marshal(response)
 			if err != nil {
 				log.Println(err)
 			}
-			
+
 			session.connection.WriteMessage(1, js)
-			
+
 		case "newFolder":
 			log.Println("Getting newFolder...")
 			var newFolderRequest NewFolderRequest
@@ -323,9 +323,9 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 				log.Println(err)
 			}
 			var filePath string = newFolderRequest.FilePath
-			
+
 			log.Println("filePath: " + filePath)
-			
+
 			var proposedFilePath = filePath
 			for i := 1; i < 1000; i++ {
 				if fileExists(proposedFilePath) {
@@ -335,28 +335,26 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 					break
 				}
 			}
-		
+
 			err := os.Mkdir(proposedFilePath, 0744)
 			if err != nil {
 				log.Println(err)
 			}
-			
-			response := FileResponse {
+
+			response := FileResponse{
 				ResponseType: "newFolder",
 				ResponseBody: "ok",
 			}
-			
+
 			js, err := json.Marshal(response)
 			if err != nil {
 				log.Println(err)
 			}
-			
-			session.connection.WriteMessage(1, js)
-			
-		}	
-	}
 
-	log.Println("Exiting handleWebSocket")
+			session.connection.WriteMessage(1, js)
+
+		}
+	}
 }
 
 func copyFile(session *webSocketSession, origin string, destination string) {
@@ -366,28 +364,28 @@ func copyFile(session *webSocketSession, origin string, destination string) {
 		return
 	}
 	defer from.Close()
-	
+
 	to, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Println(err)
 	}
 	defer to.Close()
-	
+
 	_, err = io.Copy(to, from)
 	if err != nil {
 		log.Println(err)
 	}
-	
-	response := FileResponse {
+
+	response := FileResponse{
 		ResponseType: "copyFle",
 		ResponseBody: "ok",
 	}
-	
+
 	js, err := json.Marshal(response)
 	if err != nil {
 		log.Println(err)
 	}
-	
+
 	session.connection.WriteMessage(1, js)
 }
 

@@ -3,17 +3,18 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/gorilla/mux"
-	"golang.org/x/crypto/bcrypt"
+	"io"
 	"io/ioutil"
 	"log"
-	"os"
-	"os/user"
-	"io"
 	"net/http"
+	"os"
 	"os/exec"
-	"strings"
+	"os/user"
 	"strconv"
+	"strings"
+
+	"github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type GroupUpdate struct {
@@ -32,7 +33,7 @@ type NewUser struct {
 func (app *webSocketApp) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
-	
+
 	u, err := user.Current()
 	if err != nil {
 		log.Printf("Error getting user: %s", err)
@@ -47,8 +48,8 @@ func (app *webSocketApp) handleGetFile(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error getting user: %s", err)
 			return
 		}
-		log.Println("While fetching %s as user %s", p["path"], u.Uid)
-		log.Println("Error: %s", err)
+		log.Printf("While fetching %s as user %s", p["path"], u.Uid)
+		log.Printf("Error: %s", err)
 		w.WriteHeader(404)
 	}
 	stringFile := string(file)
@@ -59,15 +60,23 @@ func (app *webSocketApp) handleChownFile(w http.ResponseWriter, r *http.Request)
 	log.Println("Handling chown file...")
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
-	
-	log.Println("Receiving %+v\n", p)
-	
+
+	log.Printf("Receiving %+v\n", p)
+
 	path := p["path"]
-	uid, err := strconv.Atoi(p["uid"]); if err != nil { w.WriteHeader(500); return }
-	gid, err := strconv.Atoi(p["gid"]); if err != nil { w.WriteHeader(500); return }
-	
-	log.Println("Getting %d, %d", uid, gid)
-	
+	uid, err := strconv.Atoi(p["uid"])
+	if err != nil {
+		w.WriteHeader(500)
+		return
+	}
+	gid, err := strconv.Atoi(p["gid"])
+	if err != nil {
+		w.WriteHeader(500)
+		return
+	}
+
+	log.Printf("Getting %d, %d", uid, gid)
+
 	err = os.Chown(path, uid, gid)
 	if err != nil {
 		w.WriteHeader(500)
@@ -83,9 +92,9 @@ func (app *webSocketApp) handleChmodFile(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(500)
 		return
 	}
-	
+
 	path := p["path"]
-	
+
 	log.Println("Received mode: " + p["mode"])
 	modeVal, _ := strconv.ParseUint(p["mode"], 8, 32)
 	log.Println("Mode:", modeVal)
@@ -105,18 +114,18 @@ func (app *webSocketApp) handleDownloadFile(w http.ResponseWriter, r *http.Reque
 		log.Println(err)
 	}
 	path := p["path"]
-	
+
 	log.Println("Got path: " + path)
 	http.ServeFile(w, r, path)
 }
 
 func (app *webSocketApp) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	log.Println("Handling uploadFile")
-	
+
 	// Parse our multipart form, 10 << 20 specifies a maximum
 	// upload of 10 MB files.
 	r.ParseMultipartForm(10 << 20)
-	
+
 	// FormFile returns the first file for the given key `myFile`
 	// it also returns the FileHeader so we can get the Filename,
 	// the Header and the size of the file
@@ -144,7 +153,7 @@ func (app *webSocketApp) handleUploadFile(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	w.WriteHeader(200)
 }
 
@@ -163,31 +172,31 @@ func (app *webSocketApp) handleGetCron(w http.ResponseWriter, r *http.Request) {
 			emptyFile.Close()
 		}
 	}
-	
+
 	log.Println("Get contents for " + argusCronPath)
 	crontab, err := ioutil.ReadFile(argusCronPath)
 	if err != nil {
 		log.Println(err)
 	}
-	w.Write(crontab)	
+	w.Write(crontab)
 }
 
 func (app *webSocketApp) handleSetCron(w http.ResponseWriter, r *http.Request) {
 	argusCronPath := "/etc/cron.d/argus"
-	
+
 	var p map[string]string
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {
 		log.Println(err)
 	}
-	
+
 	stringBytes := []byte(p["crontab"])
-	
+
 	err2 := ioutil.WriteFile(argusCronPath, stringBytes, 0644)
 	if err2 != nil {
 		log.Println(err2)
 	}
-	
+
 	w.WriteHeader(200)
 }
 
@@ -384,7 +393,11 @@ func hashAndSalt(pwd []byte) string {
 // exists returns whether the given file or directory exists
 func exists(path string) (bool, error) {
 	_, err := os.Stat(path)
-	if err == nil { return true, nil }
-	if os.IsNotExist(err) { return false, nil }
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
 	return false, err
 }
