@@ -2,22 +2,19 @@ package main
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"fmt"
 	"log"
 	"net/http"
-	"regexp"
 	"time"
 
 	"github.com/creack/golisten"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-	"github.com/lestrrat-go/file-rotatelogs"
-	
+	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
+
 	"os"
 	"os/signal"
 	"os/user"
-	"strings"
 	"sync"
 	"syscall"
 )
@@ -48,7 +45,7 @@ func newWebSocketApp() (*webSocketApp, error) {
 	}
 
 	router := mux.NewRouter()
-	router.Use(AuthenticationMiddleware)
+	router.Use(AuthenticationMiddleware("/etc/argusd.conf"))
 
 	app := &webSocketApp{
 		upgrader: upgrader,
@@ -60,7 +57,7 @@ func newWebSocketApp() (*webSocketApp, error) {
 	app.router.HandleFunc("/dashboard", app.handleDashboard).Methods("GET")
 	app.router.HandleFunc("/liveResponse", app.handleLiveResponse).Methods("GET")
 	app.router.HandleFunc("/fileOperations", app.handleFileOperations).Methods("GET")
-	
+
 	// REST endpoints
 	app.router.HandleFunc("/whoami", handleWhoAmI).Methods("GET")
 	app.router.HandleFunc("/getVersion", handleGetVersion).Methods("GET")
@@ -82,7 +79,7 @@ func newWebSocketApp() (*webSocketApp, error) {
 	app.router.HandleFunc("/restProxy", app.handleRestProxy).Methods("POST")
 	app.router.HandleFunc("/getCaddyConfig", app.handleGetCaddyConfig).Methods("GET")
 	app.router.HandleFunc("/setCaddyConfig", app.handleSetCaddyConfig).Methods("POST")
-	
+
 	return app, nil
 }
 
@@ -136,43 +133,6 @@ func handleWhoAmI(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "%s\n", u.Uid)
 }
 
-func AuthenticationMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uuidMatcher := `[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`
-		if token := r.Header.Get("X-Argus-Token"); token != "" {
-			matched, err := regexp.MatchString(uuidMatcher, token)
-			if err != nil {
-				// bad regex, so this shouldn't happen right? RIGHT?
-				log.Fatal("Error, fix your auth regex!")
-			}
-			if !matched {
-				log.Println("Error: submitted token is not a valid UUID")
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
-			
-			file, err := ioutil.ReadFile("/etc/argusd.conf")
-			if err != nil {
-				log.Println("Error: Can't read config file")
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
-			serverTokens := string(file)
-			tokenLines := strings.Split(serverTokens, "\n")
-			index, _ := FindInArray(tokenLines, token)
-			if index >= 0 {
-				next.ServeHTTP(w, r)
-				return
-			}
-			log.Println("Error: Token doesn't match.")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-		} else {
-			log.Println("Error: Token not present in headers.")
-			http.Error(w, "Forbidden", http.StatusForbidden)
-		}
-	})
-}
-
 var (
 	Version = ""
 )
@@ -182,30 +142,30 @@ func main() {
 	logf, err := rotatelogs.New(
 		"/root/.arguslogs/log.%Y%m%d%H%M",
 		rotatelogs.WithLinkName("/root/.arguslogs/log"),
-		rotatelogs.WithMaxAge(24 * time.Hour),
+		rotatelogs.WithMaxAge(24*time.Hour),
 		rotatelogs.WithRotationTime(time.Hour),
 	)
-  	if err != nil {
-	  log.Printf("failed to create rotatelogs: %s", err)
-	  return
-  	}
+	if err != nil {
+		log.Printf("failed to create rotatelogs: %s", err)
+		return
+	}
 	log.SetOutput(logf)
-	
+
 	// establish the NonRootUser for the unprivileged process
 	os.Setenv("TMPDIR", "/var/tmp/")
-	nonRootUser := os.Getenv("NonRootUser")	
+	nonRootUser := os.Getenv("NonRootUser")
 	log.Println("User from env: ", nonRootUser)
 	if len(nonRootUser) == 0 {
 		nonRootUser = ""
 	}
-	
+
 	// get the current user to ensure this runs as root
 	u, err := user.Current()
 	if err != nil {
 		log.Printf("Error getting user: %s", err)
 		return
 	}
-	
+
 	// Create a WaitGroup to manage the four servers
 	// https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f
 	wg := new(sync.WaitGroup)
@@ -214,13 +174,12 @@ func main() {
 	} else {
 		wg.Add(2)
 	}
-	
+
 	app, err := newWebSocketApp()
 	if err != nil {
 		log.Fatal("Could not create WebSocketApp:", err)
 	}
 
-	
 	if u.Uid == "0" { // I'm root!
 		go func() {
 			for {
@@ -228,10 +187,10 @@ func main() {
 				time.Sleep(10 * time.Minute)
 			}
 		}()
-	
+
 		// Setup our Ctrl+C handler
 		SetupCloseHandler()
-		
+
 		// standard root websocket application
 		go func() {
 			log.Println("Mounting root REST server at port 26510.")
@@ -247,7 +206,7 @@ func main() {
 			wg.Done()
 		}()
 	}
-	
+
 	if nonRootUser != "" {
 		go func() {
 			log.Println("Mounting non-privilege REST server at port 26511.")
@@ -257,7 +216,7 @@ func main() {
 			wg.Done()
 		}()
 	}
-	
+
 	wg.Wait()
 
 }
