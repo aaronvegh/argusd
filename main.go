@@ -166,13 +166,13 @@ func main() {
 		return
 	}
 
-	// Create a WaitGroup to manage the four servers
+	// Create a WaitGroup to manage the two servers
 	// https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f
 	wg := new(sync.WaitGroup)
 	if u.Uid == "0" && nonRootUser != "" {
-		wg.Add(4)
-	} else {
 		wg.Add(2)
+	} else {
+		wg.Add(1)
 	}
 
 	app, err := newWebSocketApp()
@@ -191,9 +191,9 @@ func main() {
 		// Setup our Ctrl+C handler
 		SetupCloseHandler()
 
-		// standard root websocket application
+		// standard root websocket/REST application
 		go func() {
-			log.Println("Mounting root REST server at port 26510.")
+			log.Println("Mounting root server at port 26510.")
 			server := &http.Server{
 				Handler:      app.router,
 				WriteTimeout: 15 * time.Second,
@@ -208,9 +208,10 @@ func main() {
 	}
 
 	if nonRootUser != "" {
+		// non-privileged websocket/REST application
 		go func() {
-			log.Println("Mounting non-privilege REST server at port 26511.")
-			if err := golisten.ListenAndServe("aaron", "127.0.0.1:26511", app.router); err != nil {
+			log.Println("Mounting non-privilege server at port 26511.")
+			if err := golisten.ListenAndServe(nonRootUser, "127.0.0.1:26511", app.router); err != nil {
 				log.Println("Could not listen and serve non-privileged app: ", err)
 			}
 			wg.Done()

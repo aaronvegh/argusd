@@ -42,7 +42,7 @@ func (ses *webSocketSession) runSystemStatus() {
 		}
 
 		if err := ses.connection.WriteJSON(payload); err != nil {
-			log.Println("WriteJSON Failed:", err)
+			log.Println("SystemStatus WriteJSON Failed:", err)
 			break
 		}
 

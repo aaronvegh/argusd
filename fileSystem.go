@@ -79,7 +79,7 @@ type FileInfo struct {
 	Name    string      // base name of the file
 	Size    int64       // length in bytes for regular files; system-dependent for others
 	Mode    os.FileMode // file mode bits
-	ModTime time.Time   // modification time
+	ModTime string      // modification time
 	Sys     interface{} // underlying info? I don't know.
 	IsDir   bool
 }
@@ -175,7 +175,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 					Name:    info.Name(),
 					Size:    info.Size(),
 					Mode:    info.Mode().Perm(),
-					ModTime: info.ModTime(),
+					ModTime: info.ModTime().Format(time.RFC3339),
 					IsDir:   isThisDir,
 					Sys:     info.Sys(),
 				})

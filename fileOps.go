@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"io"
 	"io/ioutil"
 	"log"
@@ -94,16 +95,36 @@ func (app *webSocketApp) handleChmodFile(w http.ResponseWriter, r *http.Request)
 	}
 
 	path := p["path"]
-
+	recursive, err := strconv.ParseBool(p["recursive"])
+	if err != nil {
+		log.Println("Unable to parse recursive as bool.")
+		w.WriteHeader(500)
+		return
+	}
+	
 	log.Println("Received mode: " + p["mode"])
 	modeVal, _ := strconv.ParseUint(p["mode"], 8, 32)
 	log.Println("Mode:", modeVal)
 	newMode := os.FileMode(modeVal)
 	log.Println("FileMode: ", newMode)
-	if err := os.Chmod(path, newMode); err != nil {
-		w.WriteHeader(500)
+	
+	if recursive {
+		e := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+			if err := os.Chmod(path, newMode); err != nil {
+				w.WriteHeader(500)
+			}
+			return nil
+		})
+		if e != nil {
+			log.Fatal(e)
+		}
+	} else {
+		if err := os.Chmod(path, newMode); err != nil {
+			w.WriteHeader(500)
+		}
 	}
 	w.WriteHeader(200)
+	
 }
 
 func (app *webSocketApp) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
