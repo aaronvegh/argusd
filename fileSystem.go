@@ -20,6 +20,7 @@ type FileRequest struct {
 
 type FileResponse struct {
 	ResponseType string
+	ResponsePath string
 	ResponseBody interface{}
 }
 
@@ -33,6 +34,12 @@ type DirectoryRequest struct {
 type FileContentRequest struct {
 	FilePath string
 	User     string
+}
+
+// RequestType "fileSave"
+type FileSaveRequest struct {
+	FilePath string
+	Contents string
 }
 
 // RequestType "moveFile"
@@ -137,7 +144,43 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 
 			response := FileResponse{
 				ResponseType: "fileContents",
+				ResponsePath: path,
 				ResponseBody: fileContentsResp,
+			}
+
+			js, err := json.Marshal(response)
+			if err != nil {
+				log.Println(err)
+			}
+
+			session.connection.WriteMessage(1, js)
+		case "fileSave":
+			log.Println("Starting fileSave...")
+			
+			var fileRequest FileSaveRequest
+			if err := json.Unmarshal(body, &fileRequest); err != nil {
+				log.Println(err)
+			}
+			
+			var path string = fileRequest.FilePath
+			var contents string = fileRequest.Contents
+			f, err := os.Create(path)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			defer f.Close()
+			_, err2 := f.WriteString(contents)
+			if err2 != nil {
+				log.Println(err)
+				return
+			}
+			f.Sync()
+			
+			response := FileResponse{
+				ResponseType: "saveFile",
+				ResponsePath: path,
+				ResponseBody: "ok",
 			}
 
 			js, err := json.Marshal(response)
@@ -180,9 +223,14 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 					Sys:     info.Sys(),
 				})
 			}
+			
+			if len(contentsInfo) == 0 {
+				contentsInfo = make([]FileInfo, 0)
+			}
 
 			response := FileResponse{
 				ResponseType: "directoryList",
+				ResponsePath: path,
 				ResponseBody: contentsInfo,
 			}
 
@@ -243,6 +291,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 			}
 			response := FileResponse{
 				ResponseType: "moveFile",
+				ResponsePath: destination,
 				ResponseBody: "ok",
 			}
 
@@ -269,6 +318,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 
 			response := FileResponse{
 				ResponseType: "deleteFile",
+				ResponsePath: filePath,
 				ResponseBody: "ok",
 			}
 
@@ -306,6 +356,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 
 			response := FileResponse{
 				ResponseType: "newFile",
+				ResponsePath: proposedFilePath,
 				ResponseBody: "ok",
 			}
 
@@ -343,6 +394,7 @@ func (app *webSocketApp) handleFileOperations(w http.ResponseWriter, r *http.Req
 
 			response := FileResponse{
 				ResponseType: "newFolder",
+				ResponsePath: filePath,
 				ResponseBody: "ok",
 			}
 
@@ -378,6 +430,7 @@ func copyFile(session *webSocketSession, origin string, destination string) {
 
 	response := FileResponse{
 		ResponseType: "copyFle",
+		ResponsePath: destination,
 		ResponseBody: "ok",
 	}
 
