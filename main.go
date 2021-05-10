@@ -79,6 +79,7 @@ func newWebSocketApp() (*webSocketApp, error) {
 	app.router.HandleFunc("/restProxy", app.handleRestProxy).Methods("POST")
 	app.router.HandleFunc("/getCaddyConfig", app.handleGetCaddyConfig).Methods("GET")
 	app.router.HandleFunc("/setCaddyConfig", app.handleSetCaddyConfig).Methods("POST")
+	app.router.HandleFunc("/systemCommand", app.handleSystemCommand).Methods("POST")
 
 	return app, nil
 }
